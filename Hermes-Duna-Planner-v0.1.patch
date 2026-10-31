@@ -1,0 +1,559 @@
+diff --git a/Source/DunaMission/DunaRoutePlanner.cs b/Source/DunaMission/DunaRoutePlanner.cs
+new file mode 100644
+--- /dev/null
++++ b/Source/DunaMission/DunaRoutePlanner.cs
+@@ -0,0 +1,177 @@
++using System;
++using System.Collections.Generic;
++using MegaCrew.Navigation;
++using NavVector = MegaCrew.Navigation.Vector3d;
++namespace MegaCrew.DunaMission
++{
++    // Planning estimates only: no nodes, throttle, resources, crew or KSP UT writes.
++    public struct PlanetState
++    {
++        public readonly NavVector Position,Velocity;
++        public PlanetState(NavVector position,NavVector velocity){Position=position;Velocity=velocity;}
++    }
++    public sealed class DunaSearchInputs
++    {
++        public readonly double NowUT,SunMu,KerbinMu,DunaMu,KerbinParkingRadius,DunaParkingRadius;
++        public readonly double WetKg,DryKg,ThrustN,IspSeconds;
++        public readonly double DepartureSpanDays,DepartureStepDays,MinTransferDays,MaxTransferDays,TransferStepDays,ReturnStepDays,MinimumStayDays;
++        public readonly double AlignmentSeconds,VerificationSeconds,EncounterReserveSeconds;
++        public DunaSearchInputs(double now,double sunMu,double kerbinMu,double dunaMu,double kerbinParkingRadius,double dunaParkingRadius,
++            double wetKg,double dryKg,double thrustN,double ispSeconds,
++            double departureSpanDays=360,double departureStepDays=10,double minTransferDays=50,double maxTransferDays=110,
++            double transferStepDays=15,double returnStepDays=15,double minimumStayDays=30,
++            double alignmentSeconds=3600,double verificationSeconds=3600,double encounterReserveSeconds=172800)
++        {
++            foreach(double x in new[]{now,sunMu,kerbinMu,dunaMu,kerbinParkingRadius,dunaParkingRadius,wetKg,dryKg,thrustN,ispSeconds,
++                departureSpanDays,departureStepDays,minTransferDays,maxTransferDays,transferStepDays,returnStepDays,minimumStayDays,alignmentSeconds,verificationSeconds,encounterReserveSeconds})
++                if(!CampaignTiming.Finite(x)||x<0)throw new ArgumentOutOfRangeException("inputs");
++            if(sunMu<=0||kerbinMu<=0||dunaMu<=0||kerbinParkingRadius<=0||dunaParkingRadius<=0||dryKg<=0||wetKg<=dryKg||thrustN<=0||ispSeconds<=0||
++                departureStepDays<=0||transferStepDays<=0||returnStepDays<=0||minTransferDays<=0||maxTransferDays<minTransferDays||
++                departureSpanDays>720||maxTransferDays>360||departureStepDays<1||transferStepDays<1||returnStepDays<1||minimumStayDays<1||
++                alignmentSeconds>86400||verificationSeconds>86400||encounterReserveSeconds<0||encounterReserveSeconds>10*86400)
++                throw new ArgumentOutOfRangeException("inputs","Unsupported or unbounded search inputs");
++            double count=(Math.Floor(departureSpanDays/departureStepDays)+1)*(Math.Floor((maxTransferDays-minTransferDays)/transferStepDays)+1);
++            double returnCount=8*(Math.Floor(720/returnStepDays)+1)*(Math.Floor((maxTransferDays-minTransferDays)/transferStepDays)+1);
++            if(count+returnCount>20000||!CampaignTiming.Finite(now+(departureSpanDays+1080)*86400)||now+(departureSpanDays+1080)*86400<=now)
++                throw new ArgumentOutOfRangeException("inputs","Search exceeds its numerical/work budget");
++            NowUT=now;SunMu=sunMu;KerbinMu=kerbinMu;DunaMu=dunaMu;KerbinParkingRadius=kerbinParkingRadius;DunaParkingRadius=dunaParkingRadius;
++            WetKg=wetKg;DryKg=dryKg;ThrustN=thrustN;IspSeconds=ispSeconds;DepartureSpanDays=departureSpanDays;DepartureStepDays=departureStepDays;
++            MinTransferDays=minTransferDays;MaxTransferDays=maxTransferDays;TransferStepDays=transferStepDays;ReturnStepDays=returnStepDays;MinimumStayDays=minimumStayDays;
++            AlignmentSeconds=alignmentSeconds;VerificationSeconds=verificationSeconds;EncounterReserveSeconds=encounterReserveSeconds;
++        }
++    }
++    public sealed class TransferLeg
++    {
++        public readonly double DepartureUT,ArrivalUT,DepartureExcess,ArrivalExcess;
++        public TransferLeg(double departure,double arrival,double departureExcess,double arrivalExcess)
++        {
++            foreach(double n in new[]{departure,arrival,departureExcess,arrivalExcess})if(!CampaignTiming.Finite(n)||n<0)throw new ArgumentOutOfRangeException();
++            if(arrival<=departure)throw new ArgumentOutOfRangeException();
++            DepartureUT=departure;ArrivalUT=arrival;DepartureExcess=departureExcess;ArrivalExcess=arrivalExcess;
++        }
++    }
++    public sealed class DunaBurnEstimate
++    {
++        public readonly string Name;
++        // Planet-centre encounter epoch, NOT an executable ignition time.
++        public readonly double EncounterUT,DeltaV,DurationSeconds,RemainingKg;
++        public DunaBurnEstimate(string name,double ut,double dv,double duration,double remaining)
++        {Name=name;EncounterUT=ut;DeltaV=dv;DurationSeconds=duration;RemainingKg=remaining;}
++    }
++    public sealed class DunaRoutePlan
++    {
++        readonly System.Collections.ObjectModel.ReadOnlyCollection<DunaBurnEstimate> burns;
++        readonly System.Collections.ObjectModel.ReadOnlyCollection<CampaignEpochWindow> windows;
++        public readonly TransferLeg Outbound,Inbound;
++        public readonly double TotalDeltaV,RemainingKg,EstimatedExtraPlaySeconds;
++        public System.Collections.ObjectModel.ReadOnlyCollection<DunaBurnEstimate> Burns{get{return burns;}}
++        public System.Collections.ObjectModel.ReadOnlyCollection<CampaignEpochWindow> EpochWindows{get{return windows;}}
++        internal DunaRoutePlan(TransferLeg outbound,TransferLeg inbound,List<DunaBurnEstimate> source,List<CampaignEpochWindow> epochs,double dv,double remaining,double extra)
++        {Outbound=outbound;Inbound=inbound;burns=new List<DunaBurnEstimate>(source).AsReadOnly();windows=new List<CampaignEpochWindow>(epochs).AsReadOnly();TotalDeltaV=dv;RemainingKg=remaining;EstimatedExtraPlaySeconds=extra;}
++    }
++    public static class DunaRouteMath
++    {
++        const double G0=9.80665;
++        public static double ParkingDeltaV(double excess,double mu,double radius)
++        {
++            if(!CampaignTiming.Finite(excess)||!CampaignTiming.Finite(mu)||!CampaignTiming.Finite(radius)||excess<0||mu<=0||radius<=0)throw new ArgumentOutOfRangeException();
++            double circular=Math.Sqrt(mu/radius),hyperbolic=Math.Sqrt(excess*excess+2*mu/radius);
++            double dv=hyperbolic-circular;if(!CampaignTiming.Finite(dv)||dv<=0)throw new ArgumentOutOfRangeException();return dv;
++        }
++        public static DunaRoutePlan Evaluate(DunaSearchInputs p,TransferLeg outward,TransferLeg inward)
++        {
++            if(p==null||outward==null||inward==null)throw new ArgumentNullException();
++            if(outward.DepartureUT<=p.NowUT||inward.DepartureUT<outward.ArrivalUT+p.MinimumStayDays*86400)return null;
++            double[] times={outward.DepartureUT,outward.ArrivalUT,inward.DepartureUT,inward.ArrivalUT};
++            double[] costs={ParkingDeltaV(outward.DepartureExcess,p.KerbinMu,p.KerbinParkingRadius),ParkingDeltaV(outward.ArrivalExcess,p.DunaMu,p.DunaParkingRadius),
++                ParkingDeltaV(inward.DepartureExcess,p.DunaMu,p.DunaParkingRadius),ParkingDeltaV(inward.ArrivalExcess,p.KerbinMu,p.KerbinParkingRadius)};
++            string[] names={"Kerbin departure","Duna capture","Duna departure","Kerbin orbital capture"};
++            var burns=new List<DunaBurnEstimate>();var duty=new List<BurnDutyInterval>();double mass=p.WetKg,total=0,extra=0;
++            double exhaust=p.IspSeconds*G0,massRate=p.ThrustN/exhaust;
++            if(!CampaignTiming.Finite(exhaust)||!CampaignTiming.Finite(massRate)||massRate<=0)return null;
++            for(int i=0;i<4;i++)
++            {
++                double after=mass*Math.Exp(-costs[i]/exhaust),seconds=(mass-after)/massRate;
++                if(!CampaignTiming.Finite(after)||after<p.DryKg||!CampaignTiming.Finite(seconds)||seconds<=0||seconds>86400)return null;
++                burns.Add(new DunaBurnEstimate(names[i],times[i],costs[i],seconds,after));
++                // Symmetric timing reserve is a preliminary planning margin, NOT
++                // proof that a future fitted SOI trajectory or finite burn fits.
++                double pre=p.AlignmentSeconds+p.EncounterReserveSeconds+seconds/2;
++                double post=p.VerificationSeconds+p.EncounterReserveSeconds;
++                if(times[i]<pre)return null;
++                duty.Add(new BurnDutyInterval(times[i],seconds/2,pre,post));
++                mass=after;total+=costs[i];extra+=CampaignTiming.ExtraBurnPlaySeconds(seconds);
++            }
++            // Do not permit overlapping capture/departure duty envelopes.
++            for(int i=1;i<duty.Count;i++)if(duty[i-1].EndUT>duty[i].StartUT)return null;
++            double latest=duty[0].StartUT;
++            if(latest<p.NowUT)return null;
++            var epochs=CampaignEpochPlanner.Find(p.NowUT,latest,duty);
++            // Return during the third human watch, leaving the middle human
++            // watch for Duna surface/science work. Intersect existing ranges;
++            // never edit any physical encounter epoch to make this true.
++            var returnEpochs=new List<CampaignEpochWindow>();
++            foreach(var e in epochs)
++            {
++                double first=Math.Max(e.EarliestUT,duty[3].EndUT-5*CampaignTiming.WatchSeconds);
++                double last=Math.Min(e.LatestUT,duty[2].StartUT-4*CampaignTiming.WatchSeconds);
++                if(first<=last)returnEpochs.Add(new CampaignEpochWindow(first,last));
++            }
++            epochs=returnEpochs;
++            if(epochs.Count==0)return null;
++            return new DunaRoutePlan(outward,inward,burns,epochs,total,mass,extra);
++        }
++    }
++    public sealed class DunaRouteSearch
++    {
++        readonly DunaSearchInputs p;readonly Func<bool,double,PlanetState> ephemeris;bool started;
++        public int Attempts{get;private set;}public int SolvedLegs{get;private set;}public int FeasiblePlans{get;private set;}
++        public DunaRoutePlan Best{get;private set;}
++        public DunaRouteSearch(DunaSearchInputs inputs,Func<bool,double,PlanetState> states)
++        {if(inputs==null||states==null)throw new ArgumentNullException();p=inputs;ephemeris=states;}
++        static NavVector Cross(NavVector a,NavVector b){return new NavVector(a.Y*b.Z-a.Z*b.Y,a.Z*b.X-a.X*b.Z,a.X*b.Y-a.Y*b.X);}
++        TransferLeg Leg(bool outbound,double departure,double arrival)
++        {
++            Attempts++;
++            var from=ephemeris(!outbound,departure);var to=ephemeris(outbound,arrival);
++            LambertResult result;
++            try{result=Lambert.SolveShortWay(from.Position,to.Position,arrival-departure,p.SunMu);}
++            catch(ArgumentException){return null;}catch(InvalidOperationException){return null;}
++            if(Math.Abs(result.TimeResidual)>Math.Max(.01,(arrival-departure)*1e-9))return null;
++            // Reject retrograde solutions rather than relabelling a short-way arc.
++            if(NavVector.Dot(Cross(from.Position,result.DepartureVelocity),Cross(from.Position,from.Velocity))<=0)return null;
++            var leg=new TransferLeg(departure,arrival,(result.DepartureVelocity-from.Velocity).Magnitude,(result.ArrivalVelocity-to.Velocity).Magnitude);
++            SolvedLegs++;return leg;
++        }
++        public IEnumerable<DunaRoutePlan> Scan()
++        {
++            if(started)throw new InvalidOperationException("Create a new search for each snapshot");
++            started=true;
++            var departures=new List<TransferLeg>();
++            int nd=(int)Math.Floor(p.DepartureSpanDays/p.DepartureStepDays),nt=(int)Math.Floor((p.MaxTransferDays-p.MinTransferDays)/p.TransferStepDays);
++            for(int d=0;d<=nd;d++)for(int t=0;t<=nt;t++)
++            {
++                double start=p.NowUT+p.AlignmentSeconds+p.EncounterReserveSeconds+86400+d*p.DepartureStepDays*86400,end=start+(p.MinTransferDays+t*p.TransferStepDays)*86400;
++                var leg=Leg(true,start,end);
++                if(leg!=null)
++                {
++                    departures.Add(leg);departures.Sort((a,b)=>(a.DepartureExcess+a.ArrivalExcess).CompareTo(b.DepartureExcess+b.ArrivalExcess));
++                    if(departures.Count>8)departures.RemoveAt(8);
++                }
++                yield return null; // bounded work per UI update, even with no solution
++            }
++            foreach(var outward in departures)
++            {
++                double earliest=outward.ArrivalUT+p.MinimumStayDays*86400;
++                double latest=outward.DepartureUT+CampaignTiming.MissionSeconds;
++                for(int d=0;earliest+d*p.ReturnStepDays*86400<latest;d++)for(int t=0;t<=nt;t++)
++                {
++                    double start=earliest+d*p.ReturnStepDays*86400,end=start+(p.MinTransferDays+t*p.TransferStepDays)*86400;
++                    var inward=Leg(false,start,end);DunaRoutePlan plan=inward==null?null:DunaRouteMath.Evaluate(p,outward,inward);
++                    if(plan!=null){FeasiblePlans++;if(Best==null||plan.TotalDeltaV<Best.TotalDeltaV)Best=plan;}
++                    yield return plan;
++                }
++            }
++        }
++    }
++}
+diff --git a/Source/DunaMission/DunaMissionPlanner.cs b/Source/DunaMission/DunaMissionPlanner.cs
+new file mode 100644
+--- /dev/null
++++ b/Source/DunaMission/DunaMissionPlanner.cs
+@@ -0,0 +1,158 @@
++using System;
++using System.Collections.Generic;
++using UnityEngine;
++using MegaCrew.Navigation;
++using NavVector = MegaCrew.Navigation.Vector3d;
++namespace MegaCrew.DunaMission
++{
++    [KSPAddon(KSPAddon.Startup.Flight,false)]
++    public sealed class DunaMissionPlanner : MonoBehaviour
++    {
++        const string Lock="MegaCrew.DunaPlanner";
++        Rect window=new Rect(70,100,600,450);Vector2 scroll;bool visible,hover;
++        DunaRouteSearch search;DunaSearchInputs inputs;IEnumerator<DunaRoutePlan> worker;
++        Game game;Guid vesselId;string save="",status="Plan a Kerbin–Duna–Kerbin expedition from a circular Kerbin parking orbit.";
++        bool Allowed {get{return HighLogic.LoadedSceneIsFlight&&HighLogic.CurrentGame!=null&&(HighLogic.SaveFolder??"").StartsWith("MegaCrew",StringComparison.OrdinalIgnoreCase);}}
++        void Start(){Debug.Log("[MegaCrew.Duna] Read-only Duna planner 0.1 loaded; no mission execution or warp adapter.");}
++        void Update()
++        {
++            if(!Allowed){Stop("Mission context changed; refresh the Duna plan.");visible=false;Release();return;}
++            if(Input.GetKeyDown(KeyCode.D)&&(Input.GetKey(KeyCode.LeftControl)||Input.GetKey(KeyCode.RightControl))&&(Input.GetKey(KeyCode.LeftAlt)||Input.GetKey(KeyCode.RightAlt)))visible=!visible;
++            if(!visible||!hover)Release();
++            if(search!=null&&!ContextMatches()){Stop("Snapshot belongs to a different/unavailable vessel or game; refresh the plan.");return;}
++            if(worker==null)return;
++            if(!ContextMatches()||FlightDriver.Pause||TimeWarp.CurrentRateIndex!=0||TimeWarp.CurrentRate!=1)
++            {Stop("Search cancelled after context/pause/warp change; refresh in stable 1x flight.");return;}
++            try
++            {
++                // At most two bounded Lambert evaluations per frame. Nothing
++                // blocks waiting for a successful route or writes game state.
++                float start=Time.realtimeSinceStartup;
++                for(int i=0;i<2;i++)
++                {
++                    if(!worker.MoveNext()){worker.Dispose();worker=null;status=search.Best==null?"No fuel/watch-compatible route in this sampled short-way grid. This does not prove no trajectory exists.":"Candidate itinerary found. Patched-conic and finite-burn validation remain required.";break;}
++                    if(Time.realtimeSinceStartup-start>.005f)break;
++                }
++            }
++            catch(Exception e){Stop("Duna search stopped: "+e.Message);}
++        }
++        bool ContextMatches()
++        {
++            var v=FlightGlobals.ActiveVessel;
++            return v!=null&&v.id==vesselId&&v.loaded&&!v.packed&&!v.isEVA&&save==HighLogic.SaveFolder&&object.ReferenceEquals(game,HighLogic.CurrentGame);
++        }
++        void Stop(string why){if(worker!=null){worker.Dispose();worker=null;}search=null;inputs=null;status=why;}
++        void Release(){InputLockManager.RemoveControlLock(Lock);}
++        void OnDisable(){Release();}
++        void OnDestroy(){if(worker!=null)worker.Dispose();Release();}
++        void OnApplicationFocus(bool focus){if(!focus){hover=false;Release();}}
++        static NavVector V(global::Vector3d v){return new NavVector(v.x,v.y,v.z);}
++        static PlanetState State(CelestialBody body,double ut)
++        {
++            // Both values stay in the SAME KSP orbital coordinate system,
++            // as in the existing detached preview. No world/node frame mapping.
++            return new PlanetState(V(body.orbit.getRelativePositionAtUT(ut)),V(body.orbit.getOrbitalVelocityAtUT(ut)));
++        }
++        static void Vehicle(Vessel v,out double wet,out double dry,out double thrust,out double isp)
++        {
++            wet=v.GetTotalMass()*1000;dry=wet;thrust=0;isp=0;string fuel=null;int count=0;
++            foreach(var part in v.parts)
++            {
++                if(part.Modules.Contains("MultiModeEngine"))throw new InvalidOperationException("Select and qualify the propulsion mode before planning; mixed-mode hardware is not supported yet.");
++                foreach(var engine in part.FindModulesImplementing<ModuleEngines>())
++                {
++                    if(engine.propellants.Count!=1)throw new InvalidOperationException("This first propulsion estimator supports single-propellant engines only; mixed-propellant/staged reserves need a dedicated model.");
++                    string name=engine.propellants[0].name;double currentIsp=engine.atmosphereCurve.Evaluate(0);
++                    if(fuel!=null&&(fuel!=name||Math.Abs(isp-currentIsp)>1e-4))throw new InvalidOperationException("Mixed engine/propellant configurations require a staged propulsion model.");
++                    fuel=name;isp=currentIsp;thrust+=engine.maxThrust*1000*engine.thrustPercentage/100;count++;
++                }
++            }
++            if(count==0||string.IsNullOrEmpty(fuel)||thrust<=0||isp<=0)throw new InvalidOperationException("A supported fueled propulsion system is required.");
++            double propellant=0;
++            foreach(var part in v.parts)foreach(PartResource r in part.Resources)
++                if(r.resourceName==fuel&&r.flowState)
++                {
++                    if(!CampaignTiming.Finite(r.amount)||r.amount<0||r.info==null||!CampaignTiming.Finite(r.info.density)||r.info.density<=0)throw new InvalidOperationException("Invalid propellant inventory.");
++                    propellant+=r.amount*r.info.density*1000;
++                }
++            if(propellant<=0||propellant>=wet)throw new InvalidOperationException("No usable finite propellant mass was found.");
++            // Nominal vessel-wide inventory; connectivity/staging must later be
++            // checked against stock consumption. Reserve is NEVER spent here.
++            dry=wet-.85*propellant;
++        }
++        void Begin()
++        {
++            Stop("Preparing Duna search.");
++            try
++            {
++                var v=FlightGlobals.ActiveVessel;
++                if(v==null||!v.loaded||v.packed||v.isEVA||v.situation!=Vessel.Situations.ORBITING||FlightDriver.Pause||TimeWarp.CurrentRateIndex!=0||TimeWarp.CurrentRate!=1)
++                    throw new InvalidOperationException("Use a loaded, unpaused 1x vessel in Kerbin orbit.");
++                var kerbin=FlightGlobals.Bodies.Find(b=>b.bodyName=="Kerbin");var duna=FlightGlobals.Bodies.Find(b=>b.bodyName=="Duna");
++                if(kerbin==null||duna==null||kerbin.orbit==null||duna.orbit==null||kerbin.orbit.referenceBody==null||kerbin.orbit.referenceBody!=duna.orbit.referenceBody)
++                    throw new InvalidOperationException("Kerbin and Duna must orbit the same configured star.");
++                if(v.mainBody!=kerbin||v.orbit==null||v.orbit.eccentricity>.01||v.orbit.PeA<=kerbin.atmosphereDepth+10000)
++                    throw new InvalidOperationException("Start above Kerbin's atmosphere in a near-circular parking orbit (e ≤ 0.01).");
++                foreach(var proto in HighLogic.CurrentGame.scenarios)
++                {
++                    var active=proto.moduleRef as HermesCampaign;
++                    if(active!=null&&active.Started)throw new InvalidOperationException("This preview chooses a PRE-START epoch. An active campaign cannot be rebased; plan a separate Duna mission save.");
++                }
++                double wet,dry,thrust,isp;Vehicle(v,out wet,out dry,out thrust,out isp);
++                inputs=new DunaSearchInputs(Planetarium.GetUniversalTime(),kerbin.orbit.referenceBody.gravParameter,kerbin.gravParameter,duna.gravParameter,
++                    v.orbit.semiMajorAxis,duna.Radius+Math.Max(100000,duna.atmosphereDepth+50000),wet,dry,thrust,isp);
++                game=HighLogic.CurrentGame;save=HighLogic.SaveFolder;vesselId=v.id;
++                search=new DunaRouteSearch(inputs,(isDuna,ut)=>State(isDuna?duna:kerbin,ut));worker=search.Scan().GetEnumerator();
++                status="Searching actual planetary ephemerides. Current vehicle performance is a nominal snapshot, not propulsion qualification.";
++            }
++            catch(Exception e){Stop(e.Message);}
++        }
++        void OnGUI()
++        {
++            if(!Allowed)return;
++            var oldSkin=GUI.skin;bool oldEnabled=GUI.enabled;
++            try
++            {
++                GUI.skin=HighLogic.Skin;GUI.enabled=true;
++                if(GUI.Button(new Rect(20,220,190,30),"DUNA EXPEDITION"))visible=!visible;
++                if(!visible){hover=false;Release();return;}
++                window.width=Math.Min(600,Math.Max(220,Screen.width-30));window.height=Math.Min(450,Math.Max(220,Screen.height-60));
++                window.x=Mathf.Clamp(window.x,0,Math.Max(0,Screen.width-window.width));window.y=Mathf.Clamp(window.y,0,Math.Max(0,Screen.height-window.height));
++                var mouse=new Vector2(Input.mousePosition.x,Screen.height-Input.mousePosition.y);hover=window.Contains(mouse);
++                if(hover)InputLockManager.SetControlLock(ControlTypes.ALL_SHIP_CONTROLS,Lock);else Release();
++                window=GUILayout.Window(GetInstanceID(),window,Draw,"HERMES / DUNA EXPEDITION PLANNER",GUILayout.Width(window.width),GUILayout.Height(window.height));
++            }
++            finally{GUI.skin=oldSkin;GUI.enabled=oldEnabled;}
++        }
++        static string Day(double ut){return (ut/86400).ToString("F2")+" standard days (UT "+ut.ToString("F0")+")";}
++        void Draw(int id)
++        {
++            GUILayout.BeginHorizontal();
++            if(GUILayout.Button(worker==null?"Search round trip":"Restart search"))Begin();
++            if(worker!=null&&GUILayout.Button("Cancel search"))Stop("Search cancelled; no game state changed.");
++            if(GUILayout.Button("Close",GUILayout.Width(70))){visible=false;hover=false;Release();}
++            GUILayout.EndHorizontal();
++            scroll=GUILayout.BeginScrollView(scroll);
++            GUILayout.Label(status);
++            GUILayout.Label("24 mission months / six four-month watches. Short-way heliocentric estimates; no nodes, burns, saves, crew changes or warp are executed.");
++            if(search!=null)
++            {
++                GUILayout.Label("Scanned: "+search.Attempts+" | solved legs: "+search.SolvedLegs+" | fuel/watch candidates: "+search.FeasiblePlans);
++                GUILayout.Label("Snapshot at UT "+inputs.NowUT.ToString("F0")+": wet "+(inputs.WetKg/1000).ToString("F2")+" t | retained mass "+(inputs.DryKg/1000).ToString("F2")+" t | nominal vacuum "+inputs.IspSeconds.ToString("F0")+" s / "+(inputs.ThrustN/1000).ToString("F1")+" kN. 15% propellant held for corrections/reserve; flow connectivity, staging and landed mass not yet validated.");
++                var plan=search.Best;
++                if(plan!=null)
++                {
++                    GUILayout.Label("LOWEST COST FOUND IN THIS GRID: "+plan.TotalDeltaV.ToString("F0")+" m/s for four propulsive parking-orbit transfers. No aerocapture assumed.");
++                    foreach(var burn in plan.Burns)GUILayout.Label(burn.Name+": "+Day(burn.EncounterUT)+" | "+burn.DeltaV.ToString("F0")+" m/s | nominal "+(burn.DurationSeconds/60).ToString("F1")+" min");
++                    GUILayout.Label("Pre-start campaign epoch ranges (do not rewrite an active epoch):");
++                    foreach(var e in plan.EpochWindows)GUILayout.Label(Day(e.EarliestUT)+" → "+Day(e.LatestUT));
++                    GUILayout.Label("Full provisional duty envelopes include burn duration, one-hour alignment/review, and a two-day encounter timing reserve. Encounter UT is NOT a fitted ignition epoch. Refit departure/SOI/capture geometry, actual corrections and every full burn against stock patched conics before any approval.");
++                    GUILayout.Label("Coast-only play baseline 16h03m; nominal four-burn time adds "+(plan.EstimatedExtraPlaySeconds/60).ToString("F1")+" minutes, plus alignment, handovers, lander work and maintenance. No physical trajectory or fuel use has happened.");
++                }
++            }
++            GUILayout.Label("MISSION SEQUENCE: commission and provision in Kerbin orbit → dual-check departure → outbound maintenance/crew watches → Duna capture → middle human watch: surface/science work with a qualified atmospheric lander → third human watch: return departure → Kerbin orbital capture and crew recovery. The last NPC watch remains Kerbin-orbit upkeep, then all crew wake for recovery. Surface/ascent, stationkeeping and post-campaign recovery burns require separate budgets and watch coverage; the vacuum Finch alone is not a Duna atmospheric lander.");
++            GUILayout.Label("Exactly one planned emergency remains undisclosed. Stories/tasks are not implemented by this itinerary; no extra emergencies are generated. High-rate cryosleep and two authenticated player approvals remain qualification gates.");
++            GUILayout.EndScrollView();GUI.DragWindow(new Rect(0,0,window.width,24));
++        }
++    }
++}
+diff --git a/tests/DunaRoutePlannerTests.cs b/tests/DunaRoutePlannerTests.cs
+new file mode 100644
+--- /dev/null
++++ b/tests/DunaRoutePlannerTests.cs
+@@ -0,0 +1,84 @@
++using System;
++using System.Collections.Generic;
++using MegaCrew;
++using MegaCrew.DunaMission;
++using MegaCrew.Navigation;
++class DunaRoutePlannerTests
++{
++    const double Day=86400;
++    static int checks;
++    static void Yes(bool b,string why){checks++;if(!b)throw new Exception(why);}
++    static void Eq(double a,double b,double tol=1e-8){Yes(Math.Abs(a-b)<=tol*Math.Max(1,Math.Abs(b)),a+" != "+b);}
++    static DunaSearchInputs Inputs(double wet=300000,double dry=100000)
++    {return new DunaSearchInputs(0,1e18,3e12,3e11,750000,420000,wet,dry,120000,800,60,15,40,80,20,30,10);}
++    static void Reject(Action a){try{a();}catch(ArgumentException){checks++;return;}throw new Exception("Expected input refusal");}
++    static PlanetState Circular(bool duna,double ut)
++    {
++        double r=duna?1.5e10:1e10,omega=Math.Sqrt(1e18/(r*r*r)),angle=omega*ut+(duna?.5:0),v=r*omega;
++        return new PlanetState(new Vector3d(r*Math.Cos(angle),r*Math.Sin(angle),0),new Vector3d(-v*Math.Sin(angle),v*Math.Cos(angle),0));
++    }
++    static Vector3d Accel(Vector3d r){double n=r.Magnitude;return r*(-1e18/(n*n*n));}
++    static PlanetState Integrate(PlanetState initial,double seconds)
++    {
++        // Independent Cartesian RK4 propagation: does not use Lambert's
++        // universal variables or its time residual as the endpoint oracle.
++        Vector3d r=initial.Position,v=initial.Velocity;double h=seconds/4000;
++        for(int i=0;i<4000;i++)
++        {
++            var r1=v;var v1=Accel(r);
++            var r2=v+v1*(h/2);var v2=Accel(r+r1*(h/2));
++            var r3=v+v2*(h/2);var v3=Accel(r+r2*(h/2));
++            var r4=v+v3*h;var v4=Accel(r+r3*h);
++            r=r+(r1+r2*2+r3*2+r4)*(h/6);v=v+(v1+v2*2+v3*2+v4)*(h/6);
++        }
++        return new PlanetState(r,v);
++    }
++    static void CheckArc(TransferLeg leg,bool outward)
++    {
++        var from=Circular(!outward,leg.DepartureUT);var to=Circular(outward,leg.ArrivalUT);
++        var solution=Lambert.SolveShortWay(from.Position,to.Position,leg.ArrivalUT-leg.DepartureUT,1e18);
++        var final=Integrate(new PlanetState(from.Position,solution.DepartureVelocity),leg.ArrivalUT-leg.DepartureUT);
++        Yes((final.Position-to.Position).Magnitude/to.Position.Magnitude<1e-7,"Independent propagated endpoint must meet planet ephemeris");
++        Yes((final.Velocity-solution.ArrivalVelocity).Magnitude/solution.ArrivalVelocity.Magnitude<1e-7,"Independent propagated velocity must meet arrival velocity");
++    }
++    static void Main()
++    {
++        Eq(DunaRouteMath.ParkingDeltaV(0,3e12,750000),(Math.Sqrt(2)-1)*2000);
++        Eq(DunaRouteMath.ParkingDeltaV(1500,3e12,750000),Math.Sqrt(1500*1500+8000000)-2000);
++        Reject(()=>DunaRouteMath.ParkingDeltaV(double.NaN,1,1));Reject(()=>DunaRouteMath.ParkingDeltaV(1,1,0));
++        Reject(()=>new DunaSearchInputs(0,1,1,1,1,1,1,1,1,1));
++        Reject(()=>new DunaSearchInputs(0,1,1,1,1,1,2,1,1,1,720,1,1,360,1,1));
++        Reject(()=>new TransferLeg(1,1,1,1));
++        var p=Inputs();var outbound=new TransferLeg(30*Day,90*Day,500,500);var inbound=new TransferLeg(510*Day,570*Day,500,500);
++        var plan=DunaRouteMath.Evaluate(p,outbound,inbound);Yes(plan!=null,"Known watch-compatible plan should survive");
++        double mass=p.WetKg,total=0,durations=0;
++        foreach(var b in plan.Burns)
++        {
++            double ratio=Math.Exp(-b.DeltaV/(800*9.80665));mass*=ratio;total+=b.DeltaV;
++            Eq(b.RemainingKg,mass);Eq(b.DurationSeconds,((b.RemainingKg/ratio)-b.RemainingKg)*800*9.80665/120000);durations+=b.DurationSeconds;
++        }
++        Eq(plan.TotalDeltaV,total);Eq(plan.RemainingKg,mass);Eq(plan.EstimatedExtraPlaySeconds,durations*(1-1/540.0));
++        foreach(var range in plan.EpochWindows)foreach(double epoch in new[]{range.EarliestUT,(range.EarliestUT+range.LatestUT)/2,range.LatestUT})
++            foreach(var b in plan.Burns)
++            {
++                Yes(CampaignTiming.CoversBurn(epoch,b.EncounterUT,b.DurationSeconds/2,p.AlignmentSeconds+p.EncounterReserveSeconds+b.DurationSeconds/2,p.VerificationSeconds+p.EncounterReserveSeconds),"Whole reserved window must be inside human watch");
++                Yes(epoch<=outbound.DepartureUT,"Do not shift physical route events");
++            }
++        Eq(outbound.DepartureUT,30*Day);Eq(inbound.ArrivalUT,570*Day);
++        foreach(var e in plan.EpochWindows)foreach(double epoch in new[]{e.EarliestUT,e.LatestUT})
++        {Yes(CampaignTiming.WatchAt(epoch,plan.Inbound.DepartureUT)==4,"Return departure in third human watch");Yes(CampaignTiming.WatchAt(epoch,plan.Inbound.ArrivalUT)==4,"Return arrival in third human watch");}
++        Yes(DunaRouteMath.Evaluate(Inputs(101000,100000),outbound,inbound)==null,"Reject insufficient propellant");
++        Yes(DunaRouteMath.Evaluate(p,outbound,new TransferLeg(150*Day,210*Day,500,500))==null,"Reject burns confined to NPC watch");
++        Yes(DunaRouteMath.Evaluate(p,outbound,new TransferLeg(95*Day,170*Day,500,500))==null,"Reject insufficient Duna stay");
++        Yes(DunaRouteMath.Evaluate(p,outbound,new TransferLeg(750*Day,810*Day,500,500))==null,"Reject route outside campaign");
++        var search=new DunaRouteSearch(Inputs(),Circular);int ticks=0,reported=0;
++        foreach(var improvement in search.Scan()){ticks++;if(improvement!=null)reported++;Yes(ticks<=20000,"Search must yield bounded work, including failures");}
++        Yes(search.Attempts==ticks,"Each iterator step performs at most one solve");Yes(search.Best!=null&&reported>0,"Physical circular ephemerides should yield a full round-trip candidate");
++        Yes(search.Best.TotalDeltaV>0,"No fake zero-cost mission");
++        CheckArc(search.Best.Outbound,true);CheckArc(search.Best.Inbound,false);
++        foreach(var b in search.Best.Burns)Yes(b.DurationSeconds>0&&b.RemainingKg>=p.DryKg,"Physical fuel/burn envelope");
++        var poor=new DunaRouteSearch(Inputs(101000,100000),Circular);foreach(var x in poor.Scan()){}
++        Yes(poor.Best==null,"No fake route when actual propulsion envelope is insufficient");
++        Console.WriteLine("PASS: "+checks+" Duna assertions; four-burn rocket mass/time, physical encounter epochs, full watch envelopes, insufficient fuel/stay/calendar refusal and bounded circular-ephemeris round-trip search plus independent RK4 endpoint/velocity checks. Model only, no stock SOI/flight qualification.");
++    }
++}
+diff --git a/tests/run_duna_route_tests.py b/tests/run_duna_route_tests.py
+new file mode 100644
+--- /dev/null
++++ b/tests/run_duna_route_tests.py
+@@ -0,0 +1,35 @@
++"""Compile and run the pure Duna round-trip and fuel/watch coverage tests."""
++import argparse
++import json
++import pathlib
++import subprocess
++import tempfile
++
++parser = argparse.ArgumentParser()
++parser.add_argument('--runtime', type=pathlib.Path, required=True,
++                    help='Path to a shared Microsoft.NETCore.App/VERSION directory')
++parser.add_argument('--csc', type=pathlib.Path, required=True,
++                    help='Path to Roslyn bincore/csc.dll')
++args = parser.parse_args()
++root = pathlib.Path(__file__).resolve().parents[1]
++with tempfile.TemporaryDirectory(prefix='duna-route-tests-') as temp:
++    temp = pathlib.Path(temp)
++    output = temp / 'DunaRoutePlannerTests.dll'
++    references = ['System.Private.CoreLib.dll', 'System.Runtime.dll',
++                  'System.Console.dll', 'System.Collections.dll']
++    command = ['-nologo', '-nostdlib+', '-langversion:7.3', '-target:exe',
++               f'-out:"{output}"']
++    command += [f'-reference:"{args.runtime.resolve() / name}"' for name in references]
++    source_paths=['Source/DunaMission/DunaRoutePlanner.cs','Source/Navigation/Lambert.cs','Source/CampaignTiming.cs','Source/CampaignEpochPlanner.cs','tests/DunaRoutePlannerTests.cs']
++    command += [f'"{root / rel}"' for rel in source_paths]
++    response = temp / 'args.rsp'
++    response.write_text('\n'.join(command) + '\n')
++    subprocess.run(['dotnet', str(args.csc), '@' + str(response)], check=True)
++    runtime_major = args.runtime.name.split('.')[0]
++    (temp / 'DunaRoutePlannerTests.runtimeconfig.json').write_text(json.dumps({
++        'runtimeOptions': {
++            'tfm': 'net' + runtime_major + '.0',
++            'framework': {'name': 'Microsoft.NETCore.App', 'version': args.runtime.name}
++        }
++    }))
++    subprocess.run(['dotnet', str(output)], check=True)
+diff --git a/docs/DUNA-EXPEDITION.md b/docs/DUNA-EXPEDITION.md
+new file mode 100644
+--- /dev/null
++++ b/docs/DUNA-EXPEDITION.md
+@@ -0,0 +1,44 @@
++# Hermes Duna expedition — planning candidate 0.1
++
++This adds a real ephemeris-based round-trip search and an in-game itinerary preview to consolidated PR12 base `6e7ac04f1582c7b7ab65366e146bf3d73536a9c4`. It is the first Duna-specific implementation, not a playable or flight-qualified expedition. The current practice game is not changed or converted.
++
++## In-game planner
++
++In a MegaCrew-prefixed save, enter a loaded, unpaused, 1x near-circular Kerbin orbit above the atmosphere. Open **DUNA EXPEDITION**, or Control–Option–D on Mac, and choose **Search round trip**. The window is bounded and scrollable. Searches yield one attempted leg per iterator step, with at most two steps per frame; cancellation is explicit. Search inputs/results are transient snapshots. Scene/save/Game/vessel changes invalidate them. An already-started campaign is refused because this tool chooses a pre-start epoch and cannot rebase an active clock.
++
++The adapter reads Kerbin/Duna's actual configured Orbit ephemerides around their shared parent and uses the existing short-way zero-revolution Lambert kernel. It rejects retrograde arcs. The default finite grid samples outbound departures over 360 standard days and transfer durations of 50–110 standard days. The eight lowest summed-v-infinity outbound candidates are searched for return legs over the remaining calendar. This beam/grid search does not find all arcs or establish a global optimum. An empty result means no candidate found within this search, not that a mission is physically impossible.
++
++The initial propulsion adapter supports same-Isp, single-propellant engines, appropriate to a simple LV-N vehicle. It reads current wet mass, installed nominal vacuum Isp/thrust, thrust limits and unlocked propellant inventory. Mixed/staged/multimode engines are refused. It retains 15% of that propellant as reserve in the dry-mass constraint; fuel connectivity, future staging, vehicle reconfiguration, supplies consumed during cruise and changing propulsion conditions still require stock validation. No resources are consumed or fabricated. The adapter does not ignite engines.
++
++Four propulsive parking-orbit costs are calculated from each heliocentric excess speed: Kerbin ejection, Duna circular capture, Duna ejection and Kerbin circular capture. Duna parking altitude is at least 100 km and above its atmosphere. The rocket equation carries changing mass through all four burns and estimates their durations at nominal constant vacuum performance. Atmospheric braking is not assumed. Surface/ascent, corrections, docking, plane/landing-site targeting and final crew recovery are additional budgets, not silently included in these four burns or certified by the 15% reserve.
++
++## Calendar and mission sequence
++
++Each mission month is 30 standard 24-hour days. The 24-month campaign has six 120-day watches:
++
++| Watch | Crew awake | Intended work |
++| --- | --- | --- |
++| 1, months 0–4 | Hamish / Basil | Commission, depart Kerbin, outbound tasks, Duna capture |
++| 2, months 4–8 | Ada / Vikram | Duna orbital upkeep while humans are actually frozen |
++| 3, months 8–12 | Hamish / Basil | Duna surface/science operations and ship maintenance |
++| 4, months 12–16 | Ada / Vikram | Orbital upkeep, genuine human cryosleep |
++| 5, months 16–20 | Hamish / Basil | Duna departure and Kerbin orbital capture |
++| 6, months 20–24 | Ada / Vikram | Kerbin-orbit upkeep; all-crew wake/recovery after completion |
++
++The route is evaluated first; pre-start epoch ranges are intersected afterward. The complete provisional duty envelopes must fit human watches, with the return in watch5. Encounter epochs are never moved to fit a shift. Each envelope includes estimated finite burn duration centered on the encounter, one hour of alignment, one hour of verification, and a two-day encounter timing reserve on both sides. **The planet-centre encounter time is not an executable ignition UT.** The two-day margin is an explicit planning allowance, not proof of SOI/finite-burn coverage. A fitted stock patched-conic route must replace these provisional envelopes before approval. Surface/ascent/recovery burns must get their own verified human duty windows; the final post-campaign recovery sequence is not yet scheduled.
++
++The middle human watch is intentionally retained for surface work. A dedicated Duna atmospheric/descent/ascent vehicle is required; the vacuum Finch candidate is not silently qualified as a Duna lander. Its separate clearance/release/redocking gates remain.
++
++Human coast target: one month per80 minutes, 540x. Full NPC watch target:60 real seconds,172800x. All are still blocked until real cryopod/background accounting and runtime coast limits are qualified. The coast-only baseline is16h03m, plus actual slow burns/operations. The preview estimates only the extra time for its four nominal burns; alignment, tasks, landing, handovers and the one undisclosed emergency add time. Mission UT and watch clocks may never pause for a burn.
++
++## Evidence and limits
++
++`tests/run_duna_route_tests.py` compiles the actual model with the existing Lambert/timing/epoch code. Tests cover independent parking-orbit reference calculations, sequential rocket mass/time, unchanged physical event dates, whole-envelope watch intersections, third-human-watch return, insufficient fuel/stay/calendar rejection, bounded search and an analytical circular-planet fixture. An independent Cartesian RK4 propagator checks both leg endpoints/arrival velocities instead of trusting Lambert's own time residual. All608 assertions pass. These synthetic-ephemeris tests are not an actual stock Duna route or flight.
++
++The full consolidated38 + Duna2 source candidate compiles against local KSP1.12.5 assemblies. It is not installed or launched in the play copy. No stock SOI/node/burn/resource/GUI/crew test follows from that compile.
++
++Remaining implementation: actual KSP ephemeris/vehicle adapter observation, fitted SOI ejection/capture and burn vectors, course/surface/ascent/recovery maneuvers, propulsion/supplies/thermal qualification, complete separate mission fixture, measured objectives, maintenance workload and crew handover execution, one private planned emergency, per-plan dual approval and eventual Luna authority. `Missions/Duna/mission.json` records the intended requirements; it is not an executable mission loader or a claim of completion.
++
++## Rebuild and review
++
++Apply the additive Duna patch to the documented PR12 base or review its new files against a newer compatible consolidated branch. Do not overwrite the host core or install any older branch DLL. The existing recursive build helper compiles Source/**/*.cs; build to a new external output with --output. Run the Duna runner with your local --runtime and --csc. The main game, its saves, the Luna server, IPv4 fix and backups remain untouched.
+diff --git a/Missions/Duna/mission.json b/Missions/Duna/mission.json
+new file mode 100644
+--- /dev/null
++++ b/Missions/Duna/mission.json
+@@ -0,0 +1,31 @@
++{
++  "id": "hermes-duna-expedition",
++  "schema": 1,
++  "status": "planning_candidate_not_playable",
++  "requires_new_save": true,
++  "mission_month_seconds": 2592000,
++  "mission_months": 24,
++  "watch_months": 4,
++  "human_month_play_seconds": 4800,
++  "npc_watch_play_seconds": 60,
++  "human_crew": ["Hamish Kerman", "Basil Kerman"],
++  "relief_crew": ["Ada Kerman", "Vikram Kerman"],
++  "planned_emergency_count": 1,
++  "emergency_timing_configured": false,
++  "initial_location": "Kerbin parking orbit",
++  "destination": "Duna",
++  "mission_clock_pauses_for_burns": false,
++  "burn_requires_distinct_human_checks": true,
++  "cryosleep_requires_actual_deepfreeze": true,
++  "high_rate_coast_enabled": false,
++  "phases": [
++    {"id":"commission", "location":"Kerbin orbit", "human_watch":0, "requirements":["four crew and four qualified cryopod places", "finite food/water and realistic crew care", "qualified power/cooling reserves", "propulsion and trajectory verified", "lander storage/clearance and return capability"]},
++    {"id":"outbound", "location":"Kerbin-to-Duna transfer", "human_watch":0, "requirements":["stock-fitted ejection", "separate Hamish/Basil plan checks", "measured propellant/orbital progression", "maintenance and course-correction schedule"]},
++    {"id":"duna_capture", "location":"Duna orbit", "human_watch":0, "requirements":["qualified finite capture burn", "orbit and eclipse safety", "station power and thermal checks"]},
++    {"id":"surface_science", "location":"Duna orbit/surface", "human_watch":2, "requirements":["dedicated atmospheric/descent/ascent lander", "landing-site and ascent trajectory", "human-watch coverage for all burns", "actual experiments, docking, supplies and medical/maintenance work"]},
++    {"id":"return", "location":"Duna-to-Kerbin transfer", "human_watch":4, "requirements":["stock-fitted departure/capture", "fresh independent human plan checks", "actual engine/propellant progression", "reserve and maintenance checks"]},
++    {"id":"orbital_upkeep", "location":"Kerbin orbit", "npc_watch":5, "requirements":["actual human cryosleep", "qualified relief upkeep", "real UT/resource accounting"]},
++    {"id":"crew_recovery", "location":"Kerbin orbit/recovery", "requirements":["all crew genuinely thawed", "medical assessment", "separate recovery vehicle/burn/thermal/landing qualification", "mission log archived"]}
++  ],
++  "remaining_release_gates":["functional UI", "actual ephemeris/vehicle capture", "SOI and finite-burn fit", "landing/ascent/recovery", "finite supplies and thermal/power", "genuine cryo handovers and NPC upkeep", "custom warp qualification", "measured mission objectives", "one undisclosed planned emergency", "authenticated two-player approvals and Luna later"]
++}
