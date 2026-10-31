@@ -1,0 +1,635 @@
+diff --git a/Source/DunaMission/DunaMissionPlanner.cs b/Source/DunaMission/DunaMissionPlanner.cs
+--- a/Source/DunaMission/DunaMissionPlanner.cs
++++ b/Source/DunaMission/DunaMissionPlanner.cs
+@@ -11,15 +11,48 @@
+         const string Lock="MegaCrew.DunaPlanner";
+         Rect window=new Rect(70,100,600,450);Vector2 scroll;bool visible,hover;
+         DunaRouteSearch search;DunaSearchInputs inputs;IEnumerator<DunaRoutePlan> worker;
++        readonly HashSet<uint> selectedEngines=new HashSet<uint>(),selectedTanks=new HashSet<uint>();
++        PropulsionSnapshot scopeView;ScopedPropulsion scopedPerformance;
++        bool wantBind,wantSearch,wantCancel,selectionDirty;
++        Game scopeGame;Guid scopeVessel;string scopeSave="",scopeParts="";float nextScopeCheck;
++        CelestialBody inputBody;
+         Game game;Guid vesselId;string save="",status="Plan a Kerbin–Duna–Kerbin expedition from a circular Kerbin parking orbit.";
+         bool Allowed {get{return HighLogic.LoadedSceneIsFlight&&HighLogic.CurrentGame!=null&&(HighLogic.SaveFolder??"").StartsWith("MegaCrew",StringComparison.OrdinalIgnoreCase);}}
+-        void Start(){Debug.Log("[MegaCrew.Duna] Read-only Duna planner 0.1 loaded; no mission execution or warp adapter.");}
++        void Start(){Debug.Log("[MegaCrew.Duna] Read-only Duna planner with explicit propulsion scope loaded; no mission execution or warp adapter.");}
+         void Update()
+         {
+-            if(!Allowed){Stop("Mission context changed; refresh the Duna plan.");visible=false;Release();return;}
++            if(!Allowed){ClearScope("Mission context changed; choose propulsion again.");visible=false;Release();return;}
++            // Apply GUI requests in Update, before the next layout pass. The
++            // scroll tree must not change midway through a mouse event.
++            if(wantBind){wantBind=false;BindScope();}
++            if(selectionDirty){selectionDirty=false;Stop("Primary propulsion selection changed; search again from the new selection.");}
++            if(wantCancel){wantCancel=false;Stop("Search cancelled; no game state changed.");}
++            if(wantSearch){wantSearch=false;Begin();}
+             if(Input.GetKeyDown(KeyCode.D)&&(Input.GetKey(KeyCode.LeftControl)||Input.GetKey(KeyCode.RightControl))&&(Input.GetKey(KeyCode.LeftAlt)||Input.GetKey(KeyCode.RightAlt)))visible=!visible;
+             if(!visible||!hover)Release();
++            if(scopeView!=null)
++            {
++                try
++                {
++                    var active=FlightGlobals.ActiveVessel;
++                    if(active==null||active.id!=scopeVessel||!active.loaded||active.packed||active.isEVA||!object.ReferenceEquals(scopeGame,HighLogic.CurrentGame)||scopeSave!=HighLogic.SaveFolder||PartToken(active)!=scopeParts)
++                    {ClearScope("Vessel, parts or game changed; choose primary propulsion again.");return;}
++                    if(Time.realtimeSinceStartup>=nextScopeCheck)
++                    {
++                        nextScopeCheck=Time.realtimeSinceStartup+.5f;scopeView=DunaPropulsionCapture.Read(active);
++                        if(scopedPerformance!=null)
++                        {
++                            var current=DunaPropulsionScope.Evaluate(scopeView,selectedEngines,selectedTanks);
++                            if(current.Signature!=scopedPerformance.Signature){Stop("Propulsion, locks or mass changed; refresh the plan from a new capture.");return;}
++                            if(CampaignStarted()){Stop("Campaign started; this pre-start itinerary is no longer available.");return;}
++                        }
++                    }
++                }
++                catch(Exception e){Stop("Propulsion snapshot invalidated: "+e.Message);return;}
++            }
+             if(search!=null&&!ContextMatches()){Stop("Snapshot belongs to a different/unavailable vessel or game; refresh the plan.");return;}
++            if(search!=null&&(FlightDriver.Pause||TimeWarp.CurrentRateIndex!=0||TimeWarp.CurrentRate!=1))
++            {Stop("Pause or warp invalidated the captured itinerary; refresh at unpaused 1x.");return;}
+             if(worker==null)return;
+             if(!ContextMatches()||FlightDriver.Pause||TimeWarp.CurrentRateIndex!=0||TimeWarp.CurrentRate!=1)
+             {Stop("Search cancelled after context/pause/warp change; refresh in stable 1x flight.");return;}
+@@ -39,9 +72,9 @@
+         bool ContextMatches()
+         {
+             var v=FlightGlobals.ActiveVessel;
+-            return v!=null&&v.id==vesselId&&v.loaded&&!v.packed&&!v.isEVA&&save==HighLogic.SaveFolder&&object.ReferenceEquals(game,HighLogic.CurrentGame);
+-        }
+-        void Stop(string why){if(worker!=null){worker.Dispose();worker=null;}search=null;inputs=null;status=why;}
++            return v!=null&&v.id==vesselId&&v.mainBody==inputBody&&v.orbit!=null&&v.orbit.referenceBody==inputBody&&v.loaded&&!v.packed&&!v.isEVA&&save==HighLogic.SaveFolder&&object.ReferenceEquals(game,HighLogic.CurrentGame);
++        }
++        void Stop(string why){if(worker!=null){worker.Dispose();worker=null;}search=null;inputs=null;scopedPerformance=null;status=why;}
+         void Release(){InputLockManager.RemoveControlLock(Lock);}
+         void OnDisable(){Release();}
+         void OnDestroy(){if(worker!=null)worker.Dispose();Release();}
+@@ -53,32 +86,64 @@
+             // as in the existing detached preview. No world/node frame mapping.
+             return new PlanetState(V(body.orbit.getRelativePositionAtUT(ut)),V(body.orbit.getOrbitalVelocityAtUT(ut)));
+         }
+-        static void Vehicle(Vessel v,out double wet,out double dry,out double thrust,out double isp)
+-        {
+-            wet=v.GetTotalMass()*1000;dry=wet;thrust=0;isp=0;string fuel=null;int count=0;
+-            foreach(var part in v.parts)
+-            {
+-                if(part.Modules.Contains("MultiModeEngine"))throw new InvalidOperationException("Select and qualify the propulsion mode before planning; mixed-mode hardware is not supported yet.");
+-                foreach(var engine in part.FindModulesImplementing<ModuleEngines>())
+-                {
+-                    if(engine.propellants.Count!=1)throw new InvalidOperationException("This first propulsion estimator supports single-propellant engines only; mixed-propellant/staged reserves need a dedicated model.");
+-                    string name=engine.propellants[0].name;double currentIsp=engine.atmosphereCurve.Evaluate(0);
+-                    if(fuel!=null&&(fuel!=name||Math.Abs(isp-currentIsp)>1e-4))throw new InvalidOperationException("Mixed engine/propellant configurations require a staged propulsion model.");
+-                    fuel=name;isp=currentIsp;thrust+=engine.maxThrust*1000*engine.thrustPercentage/100;count++;
+-                }
+-            }
+-            if(count==0||string.IsNullOrEmpty(fuel)||thrust<=0||isp<=0)throw new InvalidOperationException("A supported fueled propulsion system is required.");
+-            double propellant=0;
+-            foreach(var part in v.parts)foreach(PartResource r in part.Resources)
+-                if(r.resourceName==fuel&&r.flowState)
+-                {
+-                    if(!CampaignTiming.Finite(r.amount)||r.amount<0||r.info==null||!CampaignTiming.Finite(r.info.density)||r.info.density<=0)throw new InvalidOperationException("Invalid propellant inventory.");
+-                    propellant+=r.amount*r.info.density*1000;
+-                }
+-            if(propellant<=0||propellant>=wet)throw new InvalidOperationException("No usable finite propellant mass was found.");
+-            // Nominal vessel-wide inventory; connectivity/staging must later be
+-            // checked against stock consumption. Reserve is NEVER spent here.
+-            dry=wet-.85*propellant;
++        static string PartToken(Vessel v)
++        {
++            var ids=new List<uint>();var unique=new HashSet<uint>();
++            if(v.parts==null||v.parts.Count==0||v.parts.Count>2000)throw new InvalidOperationException("Unsupported vessel part list.");
++            foreach(var p in v.parts){if(p==null||p.flightID==0||!unique.Add(p.flightID))throw new InvalidOperationException("Unknown or duplicate part identity.");ids.Add(p.flightID);}
++            ids.Sort();return string.Join(",",ids.ConvertAll(id=>id.ToString()).ToArray());
++        }
++        static bool CampaignStarted()
++        {
++            if(HighLogic.CurrentGame==null)return false;
++            foreach(var proto in HighLogic.CurrentGame.scenarios){var c=proto.moduleRef as HermesCampaign;if(c!=null&&c.Started)return true;}
++            return false;
++        }
++        void ClearScope(string why)
++        {
++            Stop(why);scopeView=null;scopeGame=null;scopeParts="";selectedEngines.Clear();selectedTanks.Clear();
++        }
++        void BindScope()
++        {
++            ClearScope("Preparing explicit propulsion selection.");
++            try
++            {
++                var v=FlightGlobals.ActiveVessel;
++                if(v==null||!v.loaded||v.packed||v.isEVA||FlightDriver.Pause||TimeWarp.CurrentRateIndex!=0||TimeWarp.CurrentRate!=1)
++                    throw new InvalidOperationException("Choose propulsion on a loaded ship at unpaused 1x.");
++                scopeParts=PartToken(v);scopeView=DunaPropulsionCapture.Read(v);scopeGame=HighLogic.CurrentGame;scopeSave=HighLogic.SaveFolder;scopeVessel=v.id;
++                nextScopeCheck=Time.realtimeSinceStartup+.5f;status="Choose primary engine parts and fuel tanks below. Keep payload engines off and unselected matching fuel locked.";
++            }
++            catch(Exception e){ClearScope(e.Message);}
++        }
++        void SelectionChanged(){selectionDirty=true;}
++        string PartLabel(uint id)
++        {
++            var v=FlightGlobals.ActiveVessel;
++            if(v!=null)foreach(var p in v.parts)if(p!=null&&p.flightID==id)return (p.partInfo==null?"Part":p.partInfo.title)+" ["+id+"]";
++            return "Part ["+id+"]";
++        }
++        void DrawPropulsionScope()
++        {
++            if(GUILayout.Button(scopeView==null?"Choose primary propulsion":"Clear and reselect propulsion"))wantBind=true;
++            if(scopeView==null)return;
++            GUILayout.Label("READ-ONLY selection: no engines, fuel locks, stages or throttle are changed. Select only the carrier propulsion. All engines must be shut down; every unselected tank with matching fuel must be locked manually.");
++            GUILayout.Label("Primary engine parts:");var seen=new HashSet<uint>();var fuels=new HashSet<string>();
++            foreach(var e in scopeView.Engines)
++            {
++                if(e.PropellantCount==1&&!string.IsNullOrEmpty(e.Fuel))fuels.Add(e.Fuel);
++                if(!seen.Add(e.PartId))continue;
++                bool old=selectedEngines.Contains(e.PartId),next=GUILayout.Toggle(old,PartLabel(e.PartId)+" | "+(e.PropellantCount==1?e.Fuel:"multi-propellant")+" | "+e.VacuumIsp.ToString("F0")+" s | "+(e.Ignited?"IGNITED":"off"));
++                if(next!=old){if(next)selectedEngines.Add(e.PartId);else selectedEngines.Remove(e.PartId);SelectionChanged();}
++            }
++            GUILayout.Label("Primary fuel tanks (amounts are observations, not a flow-network proof):");
++            foreach(var r in scopeView.Resources)
++            {
++                if(!fuels.Contains(r.Name))continue;
++                bool old=selectedTanks.Contains(r.PartId),next=GUILayout.Toggle(old,PartLabel(r.PartId)+" | "+r.Name+" "+r.Amount.ToString("F2")+" | "+(r.Unlocked?"unlocked":"LOCKED"));
++                if(next!=old){if(next)selectedTanks.Add(r.PartId);else selectedTanks.Remove(r.PartId);SelectionChanged();}
++            }
++            GUILayout.Label("Selected: "+selectedEngines.Count+" engine parts / "+selectedTanks.Count+" tanks. Restartable, throttleable single-fuel engines with equal vacuum Isp only. Payload fuel remains part of retained mass.");
+         }
+         void Begin()
+         {
+@@ -98,10 +163,13 @@
+                     var active=proto.moduleRef as HermesCampaign;
+                     if(active!=null&&active.Started)throw new InvalidOperationException("This preview chooses a PRE-START epoch. An active campaign cannot be rebased; plan a separate Duna mission save.");
+                 }
+-                double wet,dry,thrust,isp;Vehicle(v,out wet,out dry,out thrust,out isp);
++                if(scopeView==null||!object.ReferenceEquals(scopeGame,HighLogic.CurrentGame)||scopeSave!=HighLogic.SaveFolder||scopeVessel!=v.id||scopeParts!=PartToken(v))
++                    throw new InvalidOperationException("Choose this vessel's primary engine parts and tanks before searching.");
++                scopeView=DunaPropulsionCapture.Read(v);scopedPerformance=DunaPropulsionScope.Evaluate(scopeView,selectedEngines,selectedTanks);
++                double wet=scopedPerformance.WetKg,dry=scopedPerformance.RetainedKg,thrust=scopedPerformance.ThrustN,isp=scopedPerformance.IspSeconds;
+                 inputs=new DunaSearchInputs(Planetarium.GetUniversalTime(),kerbin.orbit.referenceBody.gravParameter,kerbin.gravParameter,duna.gravParameter,
+                     v.orbit.semiMajorAxis,duna.Radius+Math.Max(100000,duna.atmosphereDepth+50000),wet,dry,thrust,isp);
+-                game=HighLogic.CurrentGame;save=HighLogic.SaveFolder;vesselId=v.id;
++                game=HighLogic.CurrentGame;save=HighLogic.SaveFolder;vesselId=v.id;inputBody=v.mainBody;
+                 search=new DunaRouteSearch(inputs,(isDuna,ut)=>State(isDuna?duna:kerbin,ut));worker=search.Scan().GetEnumerator();
+                 status="Searching actual planetary ephemerides. Current vehicle performance is a nominal snapshot, not propulsion qualification.";
+             }
+@@ -139,8 +207,8 @@
+                     GUILayout.BeginHorizontal(GUILayout.Height(controlsHeight));
+                     try
+                     {
+-                        if(GUILayout.Button(worker==null?"Search round trip":"Restart search",GUILayout.Height(controlsHeight)))Begin();
+-                        if(worker!=null&&GUILayout.Button("Cancel search",GUILayout.Height(controlsHeight)))Stop("Search cancelled; no game state changed.");
++                        if(GUILayout.Button(worker==null?"Search round trip":"Restart search",GUILayout.Height(controlsHeight)))wantSearch=true;
++                        if(worker!=null&&GUILayout.Button("Cancel search",GUILayout.Height(controlsHeight)))wantCancel=true;
+                         if(GUILayout.Button("Close",GUILayout.Width(70),GUILayout.Height(controlsHeight))){visible=false;hover=false;Release();}
+                     }
+                     finally { GUILayout.EndHorizontal(); }
+@@ -148,12 +216,13 @@
+                     try
+                     {
+                         GUILayout.Label(status);
++                        DrawPropulsionScope();
+                         GUILayout.Label("24 mission months / six four-month watches. Short-way heliocentric estimates; no nodes, burns, saves, crew changes or warp are executed.");
+                         if(search!=null)
+                         {
+                             GUILayout.Label("Search results use the captured input snapshot at UT "+inputs.NowUT.ToString("F0")+"; inputs are not live-updated during this search.");
+                             GUILayout.Label("Scanned: "+search.Attempts+" | solved legs: "+search.SolvedLegs+" | fuel/watch candidates: "+search.FeasiblePlans);
+-                            GUILayout.Label("Input snapshot at UT "+inputs.NowUT.ToString("F0")+": wet "+(inputs.WetKg/1000).ToString("F2")+" t | retained mass "+(inputs.DryKg/1000).ToString("F2")+" t | nominal vacuum "+inputs.IspSeconds.ToString("F0")+" s / "+(inputs.ThrustN/1000).ToString("F1")+" kN. 15% propellant held for corrections/reserve; flow connectivity, staging and landed mass not yet validated.");
++                            GUILayout.Label("Input snapshot at UT "+inputs.NowUT.ToString("F0")+": wet "+(inputs.WetKg/1000).ToString("F2")+" t | retained mass "+(inputs.DryKg/1000).ToString("F2")+" t | nominal vacuum "+inputs.IspSeconds.ToString("F0")+" s / "+(inputs.ThrustN/1000).ToString("F1")+" kN. 15% SELECTED fuel held for corrections/reserve. All unselected fuel remains in retained mass; flow connectivity, staging and landed mass are not yet validated.");
+                             var plan=search.Best;
+                             if(plan!=null)
+                             {
+diff --git a/Source/DunaMission/DunaPropulsionScope.cs b/Source/DunaMission/DunaPropulsionScope.cs
+new file mode 100644
+--- /dev/null
++++ b/Source/DunaMission/DunaPropulsionScope.cs
+@@ -0,0 +1,116 @@
++using System;
++using System.Collections.Generic;
++using System.Collections.ObjectModel;
++using System.Globalization;
++using System.Text;
++
++namespace MegaCrew.DunaMission
++{
++    public sealed class PropulsionEngineSample
++    {
++        public readonly uint PartId;
++        public readonly int PropellantCount;
++        public readonly string Fuel;
++        public readonly bool MultiMode, Ignited,CanRestart,CanShutdown,ThrottleLocked;
++        public readonly double VacuumIsp, MaxThrustN, LimiterPercent,FuelRatio;
++        public PropulsionEngineSample(uint partId,int count,string fuel,bool multiMode,bool ignited,double isp,double thrust,double limiter,bool canRestart=true,bool canShutdown=true,bool throttleLocked=false,double fuelRatio=1)
++        {PartId=partId;PropellantCount=count;Fuel=fuel??"";MultiMode=multiMode;Ignited=ignited;VacuumIsp=isp;MaxThrustN=thrust;LimiterPercent=limiter;CanRestart=canRestart;CanShutdown=canShutdown;ThrottleLocked=throttleLocked;FuelRatio=fuelRatio;}
++    }
++    public sealed class PropulsionResourceSample
++    {
++        public readonly uint PartId;
++        public readonly string Name;
++        public readonly double Amount,DensityTonnes;
++        public readonly bool Unlocked;
++        public PropulsionResourceSample(uint partId,string name,double amount,double density,bool unlocked)
++        {PartId=partId;Name=name??"";Amount=amount;DensityTonnes=density;Unlocked=unlocked;}
++    }
++    public sealed class PropulsionSnapshot
++    {
++        public readonly double WetKg;
++        public readonly ReadOnlyCollection<uint> PartIds;
++        public readonly ReadOnlyCollection<PropulsionEngineSample> Engines;
++        public readonly ReadOnlyCollection<PropulsionResourceSample> Resources;
++        public PropulsionSnapshot(double wet,IEnumerable<uint> ids,IEnumerable<PropulsionEngineSample> engines,IEnumerable<PropulsionResourceSample> resources)
++        {
++            if(ids==null||engines==null||resources==null)throw new ArgumentNullException("snapshot observations");
++            WetKg=wet;PartIds=new List<uint>(ids).AsReadOnly();Engines=new List<PropulsionEngineSample>(engines).AsReadOnly();Resources=new List<PropulsionResourceSample>(resources).AsReadOnly();
++        }
++    }
++    public sealed class ScopedPropulsion
++    {
++        public readonly double WetKg,RetainedKg,ThrustN,IspSeconds,UsableFuelKg,ReservedFuelKg;
++        public readonly string Fuel,Signature;
++        public readonly ReadOnlyCollection<uint> EnginePartIds,TankPartIds;
++        internal ScopedPropulsion(double wet,double fuelKg,double thrust,double isp,string fuel,string signature,List<uint> engines,List<uint> tanks)
++        {WetKg=wet;UsableFuelKg=.85*fuelKg;ReservedFuelKg=.15*fuelKg;RetainedKg=wet-UsableFuelKg;ThrustN=thrust;IspSeconds=isp;Fuel=fuel;Signature=signature;EnginePartIds=engines.AsReadOnly();TankPartIds=tanks.AsReadOnly();}
++    }
++    // Nominal read-only performance only. Selection is not proof of stock fuel
++    // connectivity, finite-burn behavior, stage isolation or burn authorization.
++    public static class DunaPropulsionScope
++    {
++        static bool Finite(double d){return !double.IsNaN(d)&&!double.IsInfinity(d);}
++        static InvalidOperationException Refuse(string reason){return new InvalidOperationException(reason);}
++        static List<uint> Selection(IEnumerable<uint> source,string label)
++        {
++            if(source==null)throw Refuse("Choose "+label+" explicitly.");
++            var set=new HashSet<uint>();var result=new List<uint>();
++            foreach(uint id in source){if(id==0||!set.Add(id))throw Refuse("Invalid or duplicate "+label+" identity.");result.Add(id);}
++            if(result.Count==0)throw Refuse("Choose "+label+" explicitly.");result.Sort();return result;
++        }
++        static string Number(double value){return value.ToString("R",CultureInfo.InvariantCulture);}
++        public static ScopedPropulsion Evaluate(PropulsionSnapshot snapshot,IEnumerable<uint> engineIds,IEnumerable<uint> tankIds)
++        {
++            if(snapshot==null||!Finite(snapshot.WetKg)||snapshot.WetKg<=0)throw Refuse("Invalid observed vessel mass.");
++            if(snapshot.PartIds.Count==0||snapshot.PartIds.Count>2000||snapshot.Engines.Count>2000||snapshot.Resources.Count>20000)throw Refuse("Unsupported snapshot size.");
++            var parts=new HashSet<uint>();foreach(uint id in snapshot.PartIds)if(id==0||!parts.Add(id))throw Refuse("Unknown or duplicate vessel part identity.");
++            var selectedEngines=Selection(engineIds,"primary engine parts");var selectedTanks=Selection(tankIds,"primary fuel tanks");
++            foreach(uint id in selectedEngines)if(!parts.Contains(id))throw Refuse("Selected engine is no longer on this vessel.");
++            foreach(uint id in selectedTanks)if(!parts.Contains(id))throw Refuse("Selected tank is no longer on this vessel.");
++            var engines=new HashSet<uint>(selectedEngines);var tanks=new HashSet<uint>(selectedTanks);var counts=new Dictionary<uint,int>();
++            double thrust=0,isp=0;string fuel=null;
++            var signatureRows=new List<string>();
++            foreach(var e in snapshot.Engines)
++            {
++                if(e==null||!parts.Contains(e.PartId))throw Refuse("Unknown engine observation.");
++                // Planning starts with all engines shut down, including payloads.
++                if(e.Ignited)throw Refuse("Shut down every attached engine before capturing a propulsion plan.");
++                signatureRows.Add("E:"+e.PartId+":"+e.PropellantCount+":"+e.Fuel+":"+e.MultiMode+":"+e.Ignited+":"+Number(e.VacuumIsp)+":"+Number(e.MaxThrustN)+":"+Number(e.LimiterPercent)+":"+e.CanRestart+":"+e.CanShutdown+":"+e.ThrottleLocked+":"+Number(e.FuelRatio));
++                if(!engines.Contains(e.PartId))continue;
++                int n;counts.TryGetValue(e.PartId,out n);counts[e.PartId]=n+1;
++                if(e.MultiMode||e.PropellantCount!=1||string.IsNullOrEmpty(e.Fuel))throw Refuse("Selected primary engines must be single-mode, single-propellant hardware.");
++                if(!e.CanRestart||!e.CanShutdown||e.ThrottleLocked)throw Refuse("Primary engines must support restart, shutdown and throttle control for the four-burn itinerary.");
++                if(!Finite(e.FuelRatio)||e.FuelRatio<=0)throw Refuse("Invalid primary propellant ratio.");
++                if(!Finite(e.VacuumIsp)||e.VacuumIsp<=0||!Finite(e.MaxThrustN)||e.MaxThrustN<=0||!Finite(e.LimiterPercent)||e.LimiterPercent<=0||e.LimiterPercent>100)throw Refuse("Invalid primary engine performance or limiter.");
++                if(fuel!=null&&(fuel!=e.Fuel||Math.Abs(isp-e.VacuumIsp)>1e-4))throw Refuse("Selected primary engines must use the same fuel and vacuum Isp.");
++                fuel=e.Fuel;isp=e.VacuumIsp;thrust+=e.MaxThrustN*e.LimiterPercent/100;
++            }
++            foreach(uint id in selectedEngines){int count;if(!counts.TryGetValue(id,out count)||count!=1)throw Refuse("Each selected part must have exactly one supported engine module.");}
++            if(!Finite(thrust)||thrust<=0||fuel==null)throw Refuse("No supported primary thrust was captured.");
++            double fuelKg=0,fuelDensity=0;var foundTanks=new HashSet<uint>();var resourceKeys=new HashSet<string>();
++            foreach(var r in snapshot.Resources)
++            {
++                if(r==null||!parts.Contains(r.PartId)||string.IsNullOrEmpty(r.Name)||!Finite(r.Amount)||r.Amount<0||!Finite(r.DensityTonnes)||r.DensityTonnes<0)throw Refuse("Invalid observed resource inventory.");
++                if(!resourceKeys.Add(r.PartId+":"+r.Name))throw Refuse("Duplicate resource observation.");
++                if(r.Name!=fuel)continue;
++                if(r.DensityTonnes<=0||(fuelDensity>0&&Math.Abs(fuelDensity-r.DensityTonnes)>1e-12))throw Refuse("Inconsistent or invalid primary fuel density.");
++                fuelDensity=r.DensityTonnes;
++                signatureRows.Add("F:"+r.PartId+":"+Number(r.Amount)+":"+Number(r.DensityTonnes)+":"+r.Unlocked);
++                if(tanks.Contains(r.PartId))
++                {
++                    foundTanks.Add(r.PartId);
++                    if(!r.Unlocked||r.DensityTonnes<=0)throw Refuse("A selected primary fuel tank is locked or has invalid density.");
++                    fuelKg+=r.Amount*r.DensityTonnes*1000;
++                }
++                else if(r.Unlocked&&r.Amount>0)throw Refuse("Unselected "+fuel+" is unlocked. Include that tank explicitly or lock it manually before planning.");
++            }
++            foreach(uint id in selectedTanks)if(!foundTanks.Contains(id))throw Refuse("A selected tank does not contain the primary fuel.");
++            if(!Finite(fuelKg)||fuelKg<=0||fuelKg>=snapshot.WetKg)throw Refuse("No valid finite primary fuel mass.");
++            signatureRows.Sort(StringComparer.Ordinal);var allParts=new List<uint>(parts);allParts.Sort();
++            var signature=new StringBuilder(Number(snapshot.WetKg));foreach(uint id in allParts)signature.Append("|P:").Append(id);
++            foreach(uint id in selectedEngines)signature.Append("|SE:").Append(id);foreach(uint id in selectedTanks)signature.Append("|ST:").Append(id);
++            foreach(string row in signatureRows)signature.Append('|').Append(row);
++            return new ScopedPropulsion(snapshot.WetKg,fuelKg,thrust,isp,fuel,signature.ToString(),selectedEngines,selectedTanks);
++        }
++    }
++}
+diff --git a/Source/DunaMission/DunaPropulsionCapture.cs b/Source/DunaMission/DunaPropulsionCapture.cs
+new file mode 100644
+--- /dev/null
++++ b/Source/DunaMission/DunaPropulsionCapture.cs
+@@ -0,0 +1,31 @@
++using System;
++using System.Collections.Generic;
++namespace MegaCrew.DunaMission
++{
++    // Reads live KSP objects only. No part, engine, resource, throttle or stage writes.
++    public static class DunaPropulsionCapture
++    {
++        public static PropulsionSnapshot Read(Vessel vessel)
++        {
++            if(vessel==null||!vessel.loaded||vessel.packed||vessel.isEVA||vessel.parts==null)throw new InvalidOperationException("A loaded, unpacked ship is required for propulsion capture.");
++            var ids=new List<uint>();var engines=new List<PropulsionEngineSample>();var resources=new List<PropulsionResourceSample>();
++            foreach(var part in vessel.parts)
++            {
++                if(part==null||part.Modules==null||part.Resources==null)throw new InvalidOperationException("Unavailable part observation.");
++                ids.Add(part.flightID);
++                foreach(var engine in part.FindModulesImplementing<ModuleEngines>())
++                {
++                    if(engine==null||engine.propellants==null||engine.atmosphereCurve==null)throw new InvalidOperationException("Unavailable engine observation.");
++                    string fuel=engine.propellants.Count==1&&engine.propellants[0]!=null?engine.propellants[0].name:"";
++                    engines.Add(new PropulsionEngineSample(part.flightID,engine.propellants.Count,fuel,part.Modules.Contains("MultiModeEngine"),engine.EngineIgnited,engine.atmosphereCurve.Evaluate(0),engine.maxThrust*1000,engine.thrustPercentage,engine.allowRestart,engine.allowShutdown,engine.throttleLocked,engine.propellants.Count==1&&engine.propellants[0]!=null?engine.propellants[0].ratio:0));
++                }
++                foreach(PartResource resource in part.Resources)
++                {
++                    if(resource==null||resource.info==null)throw new InvalidOperationException("Unavailable resource observation.");
++                    resources.Add(new PropulsionResourceSample(part.flightID,resource.resourceName,resource.amount,resource.info.density,resource.flowState));
++                }
++            }
++            return new PropulsionSnapshot(vessel.GetTotalMass()*1000,ids,engines,resources);
++        }
++    }
++}
+diff --git a/tests/DunaPropulsionScopeTests.cs b/tests/DunaPropulsionScopeTests.cs
+new file mode 100644
+--- /dev/null
++++ b/tests/DunaPropulsionScopeTests.cs
+@@ -0,0 +1,81 @@
++using System;
++using System.Collections.Generic;
++using MegaCrew.DunaMission;
++class Tests
++{
++    static int checks;
++    static void Check(bool ok,string name){checks++;if(!ok)throw new Exception(name);}
++    static void Reject(Action a,string name){try{a();}catch(InvalidOperationException){checks++;return;}throw new Exception("Accepted "+name);}
++    static List<uint> Parts(){var l=new List<uint>();for(uint i=1;i<=127;i++)l.Add(i);return l;}
++    static List<PropulsionEngineSample> Engines()
++    {
++        var l=new List<PropulsionEngineSample>();for(uint i=1;i<=4;i++)l.Add(E(i));
++        l.Add(new PropulsionEngineSample(5,2,"",false,false,305,120000,100));l.Add(new PropulsionEngineSample(6,2,"",false,false,305,120000,100));return l;
++    }
++    static PropulsionEngineSample E(uint id,double isp=800,double thrust=60000,double limit=100,bool ignited=false,bool mode=false,bool restart=true,bool shutdown=true,bool locked=false)
++    {return new PropulsionEngineSample(id,1,"LiquidFuel",mode,ignited,isp,thrust,limit,restart,shutdown,locked);}
++    static List<PropulsionResourceSample> Resources()
++    {
++        var l=new List<PropulsionResourceSample>();for(uint i=10;i<=12;i++)l.Add(R(i,10000));for(uint i=13;i<=14;i++)l.Add(R(i,1125));
++        l.Add(R(20,1440,false));l.Add(R(21,1440,false));l.Add(new PropulsionResourceSample(20,"Oxidizer",1760,.005,false));l.Add(new PropulsionResourceSample(21,"Oxidizer",1760,.005,false));
++        l.Add(new PropulsionResourceSample(30,"ElectricCharge",18545,0,true));l.Add(new PropulsionResourceSample(31,"Food",2958,.00028102905982906,true));return l;
++    }
++    static PropulsionResourceSample R(uint id,double amount,bool unlocked=true,double density=.005){return new PropulsionResourceSample(id,"LiquidFuel",amount,density,unlocked);}
++    static readonly uint[] EngineIds={1,2,3,4},TankIds={10,11,12,13,14};
++    static PropulsionSnapshot S(double wet=320361.78395897423,List<uint> ids=null,List<PropulsionEngineSample> engines=null,List<PropulsionResourceSample> resources=null)
++    {return new PropulsionSnapshot(wet,ids??Parts(),engines??Engines(),resources??Resources());}
++    static ScopedPropulsion Evaluate(PropulsionSnapshot s){return DunaPropulsionScope.Evaluate(s,EngineIds,TankIds);}
++    static void Main()
++    {
++        var baseline=Evaluate(S());Check(Math.Abs(baseline.ThrustN-240000)<1e-8,"four carrier engines only");Check(baseline.IspSeconds==800&&baseline.Fuel=="LiquidFuel","carrier family");
++        Check(Math.Abs(baseline.UsableFuelKg-137062.5)<1e-8,"exact carrier-only usable mass");Check(Math.Abs(baseline.ReservedFuelKg-24187.5)<1e-8,"15 percent reserve");
++        Check(Math.Abs(baseline.RetainedKg-183299.28395897423)<1e-8,"payload fuel and mass retained");
++        Check(Math.Abs(800*9.80665*Math.Log(baseline.WetKg/baseline.RetainedKg)-4380.282878642188)<1e-7,"fleet cross-check");
++        Check(baseline.EnginePartIds.Count==4&&baseline.TankPartIds.Count==5,"explicit subsets");
++        Reject(()=>DunaPropulsionScope.Evaluate(S(),new uint[0],TankIds),"implicit engines");Reject(()=>DunaPropulsionScope.Evaluate(S(),EngineIds,new uint[0]),"implicit tanks");
++        Reject(()=>DunaPropulsionScope.Evaluate(S(),new uint[]{1,1},TankIds),"duplicate engine");Reject(()=>DunaPropulsionScope.Evaluate(S(),EngineIds,new uint[]{10,10}),"duplicate tank");
++        Reject(()=>DunaPropulsionScope.Evaluate(S(),new uint[]{0},TankIds),"zero selected ID");Reject(()=>DunaPropulsionScope.Evaluate(S(),new uint[]{999},TankIds),"missing engine");
++        Reject(()=>DunaPropulsionScope.Evaluate(S(),new uint[]{40},TankIds),"non-engine selected");Reject(()=>DunaPropulsionScope.Evaluate(S(),EngineIds,new uint[]{40}),"non-fuel tank");
++        Reject(()=>DunaPropulsionScope.Evaluate(S(),EngineIds,new uint[]{20}),"payload locked tank");Reject(()=>DunaPropulsionScope.Evaluate(S(),new uint[]{1,2,3,4,5},TankIds),"mixed payload engine selected");
++        Reject(()=>DunaPropulsionScope.Evaluate(S(),EngineIds,new uint[]{10,11,12}),"unselected unlocked adapter fuel");
++        var resources=Resources();resources[5]=R(20,1440,true);Reject(()=>Evaluate(S(resources:resources)),"unlocked payload fuel");
++        resources=Resources();resources[0]=R(10,10000,false);Reject(()=>Evaluate(S(resources:resources)),"locked selected tank");
++        foreach(double n in new[]{double.NaN,double.PositiveInfinity,-1.0})
++        {
++            Reject(()=>Evaluate(S(wet:n)),"invalid wet mass");resources=Resources();resources[0]=R(10,n);Reject(()=>Evaluate(S(resources:resources)),"invalid fuel amount");
++            resources=Resources();resources[0]=R(10,10000,true,n);Reject(()=>Evaluate(S(resources:resources)),"invalid density");
++        }
++        resources=Resources();resources[0]=R(10,10000,true,0);Reject(()=>Evaluate(S(resources:resources)),"zero fuel density");
++        Reject(()=>Evaluate(S(wet:100000)),"fuel exceeds wet mass");
++        var ids=Parts();ids.Add(1);Reject(()=>Evaluate(S(ids:ids)),"duplicate part identity");ids=Parts();ids[0]=0;Reject(()=>Evaluate(S(ids:ids)),"unknown part identity");
++        var engines=Engines();engines.Add(E(1));Reject(()=>Evaluate(S(engines:engines)),"multiple engine modules selected");engines=Engines();engines.Add(E(999));Reject(()=>Evaluate(S(engines:engines)),"unknown engine part");
++        engines=Engines();engines[4]=new PropulsionEngineSample(5,2,"",false,true,305,120000,100);Reject(()=>Evaluate(S(engines:engines)),"excluded payload ignited");
++        engines=Engines();engines[0]=E(1,ignited:true);Reject(()=>Evaluate(S(engines:engines)),"primary ignited");
++        engines=Engines();engines[0]=E(1,mode:true);Reject(()=>Evaluate(S(engines:engines)),"selected mode ambiguity");
++        engines=Engines();engines[0]=E(1,restart:false);Reject(()=>Evaluate(S(engines:engines)),"cannot restart");
++        engines=Engines();engines[0]=E(1,shutdown:false);Reject(()=>Evaluate(S(engines:engines)),"cannot shut down");
++        engines=Engines();engines[0]=E(1,locked:true);Reject(()=>Evaluate(S(engines:engines)),"throttle locked");
++        foreach(double n in new[]{double.NaN,double.PositiveInfinity,-1.0,0.0})
++        {
++            engines=Engines();engines[0]=E(1,isp:n);Reject(()=>Evaluate(S(engines:engines)),"invalid Isp");engines=Engines();engines[0]=E(1,thrust:n);Reject(()=>Evaluate(S(engines:engines)),"invalid thrust");
++            engines=Engines();engines[0]=E(1,limit:n);Reject(()=>Evaluate(S(engines:engines)),"invalid limiter");
++        }
++        engines=Engines();engines[0]=E(1,limit:101);Reject(()=>Evaluate(S(engines:engines)),"limiter exceeds 100");
++        engines=Engines();engines[1]=E(2,isp:801);Reject(()=>Evaluate(S(engines:engines)),"mixed Isp");
++        resources=Resources();resources[5]=R(20,1440,false,.004);Reject(()=>Evaluate(S(resources:resources)),"locked payload reports inconsistent fuel density");
++        resources=Resources();resources[0]=R(10,10000,true,.004);Reject(()=>Evaluate(S(resources:resources)),"selected tanks report inconsistent fuel density");
++        engines=Engines();engines[0]=new PropulsionEngineSample(1,1,"LiquidFuel",false,false,800,60000,100,fuelRatio:0);Reject(()=>Evaluate(S(engines:engines)),"zero propellant ratio");
++        engines=Engines();engines[0]=new PropulsionEngineSample(1,1,"LiquidFuel",false,false,800,60000,100,fuelRatio:double.NaN);Reject(()=>Evaluate(S(engines:engines)),"unknown propellant ratio");
++        resources=Resources();resources.Add(R(10,1));Reject(()=>Evaluate(S(resources:resources)),"duplicate resource");resources=Resources();resources.Add(R(999,1));Reject(()=>Evaluate(S(resources:resources)),"unknown resource owner");
++        resources=Resources();resources.Add(R(40,0));Check(Evaluate(S(resources:resources)).UsableFuelKg==baseline.UsableFuelKg,"empty unlocked unselected tank harmless");
++        resources[resources.Count-1]=R(40,1);Reject(()=>Evaluate(S(resources:resources)),"later fill invalidates exclusion");
++        resources=Resources();resources[0]=R(10,9999);Check(Evaluate(S(resources:resources)).Signature!=baseline.Signature,"fuel change invalidates captured signature");
++        engines=Engines();engines[0]=E(1,limit:50);Check(Evaluate(S(engines:engines)).Signature!=baseline.Signature,"limiter change invalidates");
++        Check(Evaluate(S(wet:320362)).Signature!=baseline.Signature,"mass change invalidates");ids=Parts();ids.Add(128);Check(Evaluate(S(ids:ids)).Signature!=baseline.Signature,"part membership change invalidates");
++        resources=Resources();resources[9]=new PropulsionResourceSample(30,"ElectricCharge",123,0,true);Check(Evaluate(S(resources:resources)).Signature==baseline.Signature,"zero mass EC observation does not cancel fuel snapshot");
++        ids=Parts();ids.Reverse();engines=Engines();engines.Reverse();resources=Resources();resources.Reverse();Check(Evaluate(S(ids:ids,engines:engines,resources:resources)).Signature==baseline.Signature,"observation ordering independent");
++        var inputIds=Parts();engines=Engines();resources=Resources();var immutable=S(ids:inputIds,engines:engines,resources:resources);inputIds.Clear();engines.Clear();resources.Clear();Check(Evaluate(immutable).Signature==baseline.Signature,"snapshot copies caller collections");
++        try{((IList<uint>)immutable.PartIds)[0]=0;throw new Exception("mutable snapshot");}catch(NotSupportedException){checks++;}
++        Console.WriteLine("PASS: "+checks+" explicit propulsion model assertions; payload separation, finite inventory, refusal/freshness and immutable observations. No KSP gameplay result.");
++    }
++}
+diff --git a/tests/DunaPropulsionCaptureTests.cs b/tests/DunaPropulsionCaptureTests.cs
+new file mode 100644
+--- /dev/null
++++ b/tests/DunaPropulsionCaptureTests.cs
+@@ -0,0 +1,70 @@
++using System;
++using System.Collections.Generic;
++using MegaCrew.DunaMission;
++// Recording KSP boundary doubles. Observed properties have no writable setter;
++// production capture cannot compile a hardware/resource write against this API.
++public class Propellant{public readonly string name;public readonly double ratio=.9;public Propellant(string n){name=n;}}
++public class Curve{public readonly double value;public int evaluations;public Curve(double n){value=n;}public float Evaluate(float pressure){if(pressure!=0)throw new Exception("non-vacuum query");evaluations++;return (float)value;}}
++public class ModuleEngines
++{
++    public readonly List<Propellant> propellants;
++    public readonly Curve atmosphereCurve;
++    public readonly bool EngineIgnited,allowRestart,allowShutdown,throttleLocked;
++    public readonly float maxThrust,thrustPercentage;
++    public ModuleEngines(string[] names,float thrust=60,float isp=800,bool ignited=false,bool restart=true,bool shutdown=true,bool locked=false,float limit=100)
++    {propellants=new List<Propellant>();foreach(var n in names)propellants.Add(new Propellant(n));atmosphereCurve=new Curve(isp);maxThrust=thrust;thrustPercentage=limit;EngineIgnited=ignited;allowRestart=restart;allowShutdown=shutdown;throttleLocked=locked;}
++}
++public class ResourceInfo{public readonly double density;public ResourceInfo(double d){density=d;}}
++public class PartResource
++{
++    public readonly string resourceName;public readonly double amount;public readonly bool flowState;public readonly ResourceInfo info;
++    public PartResource(string n,double a,double d,bool flow=true,bool missingInfo=false){resourceName=n;amount=a;flowState=flow;info=missingInfo?null:new ResourceInfo(d);}
++}
++public class Modules{public readonly bool mode;public Modules(bool b=false){mode=b;}public bool Contains(string name){return name=="MultiModeEngine"&&mode;}}
++public class Part
++{
++    public readonly uint flightID;public readonly Modules Modules;public readonly List<PartResource> Resources;
++    readonly List<ModuleEngines> engines;
++    public Part(uint id,List<ModuleEngines> e=null,List<PartResource> r=null,bool mode=false){flightID=id;engines=e??new List<ModuleEngines>();Resources=r??new List<PartResource>();Modules=new Modules(mode);}
++    public List<T> FindModulesImplementing<T>()where T:class{var l=new List<T>();foreach(var e in engines)if(e==null)l.Add(null);else if(e is T)l.Add(e as T);return l;}
++}
++public class Vessel
++{
++    public readonly bool loaded,packed,isEVA;public readonly List<Part> parts;public int massReads;readonly double mass;
++    public Vessel(List<Part> p,bool l=true,bool pack=false,bool eva=false,double m=50){parts=p;loaded=l;packed=pack;isEVA=eva;mass=m;}
++    public double GetTotalMass(){massReads++;return mass;}
++}
++class CaptureTests
++{
++    static int count;
++    static void Check(bool b,string n){count++;if(!b)throw new Exception(n);}
++    static void Reject(Action action,string n){try{action();}catch(InvalidOperationException){count++;return;}throw new Exception("Accepted "+n);}
++    static List<Part> Parts(bool ignite=false,bool mode=false,bool restart=true,bool shutdown=true,bool locked=false,float limiter=75)
++    {
++        return new List<Part>{new Part(1,new List<ModuleEngines>{new ModuleEngines(new[]{"LiquidFuel"},restart:restart,shutdown:shutdown,locked:locked,limit:limiter)}),new Part(2,new List<ModuleEngines>{new ModuleEngines(new[]{"LiquidFuel","Oxidizer"},120,305,ignite)},mode:mode),new Part(3,r:new List<PartResource>{new PartResource("LiquidFuel",1000,.005),new PartResource("ElectricCharge",900,0)}),new Part(4,r:new List<PartResource>{new PartResource("LiquidFuel",200,.005,false),new PartResource("Oxidizer",220,.005,false)})};
++    }
++    static ScopedPropulsion Scope(Vessel v){return DunaPropulsionScope.Evaluate(DunaPropulsionCapture.Read(v),new uint[]{1},new uint[]{3});}
++    static void Main()
++    {
++        var parts=Parts();var vessel=new Vessel(parts);var snapshot=DunaPropulsionCapture.Read(vessel);var result=DunaPropulsionScope.Evaluate(snapshot,new uint[]{1},new uint[]{3});
++        Check(snapshot.WetKg==50000&&vessel.massReads==1,"actual mass read and kg conversion");Check(snapshot.PartIds.Count==4&&snapshot.Engines.Count==2&&snapshot.Resources.Count==4,"all observations captured");
++        Check(result.ThrustN==45000&&result.IspSeconds==800,"actual max thrust, limiter and Isp");Check(result.UsableFuelKg==4250&&result.ReservedFuelKg==750,"only explicitly selected unlocked tank");
++        Check(snapshot.Engines[0].FuelRatio==.9,"actual propellant ratio read");
++        Check(snapshot.Engines[1].PropellantCount==2&&snapshot.Engines[1].Fuel=="","excluded mixed family observed, not selected");
++        Check(snapshot.Resources[2].Unlocked==false&&snapshot.Resources[2].Amount==200,"actual payload lock and amount");
++        Check(parts.Count==4&&object.ReferenceEquals(parts,vessel.parts),"vessel collection unchanged");
++        Check(parts[2].Resources[0].amount==1000&&parts[3].Resources[0].amount==200&&!parts[3].Resources[0].flowState,"all source resource state unchanged");
++        var engines=parts[0].FindModulesImplementing<ModuleEngines>();Check(!engines[0].EngineIgnited&&engines[0].thrustPercentage==75&&engines[0].maxThrust==60,"engine state unchanged");Check(engines[0].atmosphereCurve.evaluations==1,"actual curve queried at vacuum once");
++        parts.Clear();Check(snapshot.PartIds.Count==4&&snapshot.Resources.Count==4,"observations detached from live source list");
++        Reject(()=>DunaPropulsionCapture.Read(null),"null vessel");Reject(()=>DunaPropulsionCapture.Read(new Vessel(Parts(),l:false)),"unloaded");Reject(()=>DunaPropulsionCapture.Read(new Vessel(Parts(),pack:true)),"packed");Reject(()=>DunaPropulsionCapture.Read(new Vessel(Parts(),eva:true)),"EVA");
++        Reject(()=>DunaPropulsionCapture.Read(new Vessel(null)),"missing parts");Reject(()=>DunaPropulsionCapture.Read(new Vessel(new List<Part>{null})),"unavailable part");
++        Reject(()=>DunaPropulsionCapture.Read(new Vessel(new List<Part>{new Part(1,r:new List<PartResource>{new PartResource("LiquidFuel",1,.005,missingInfo:true)})})),"missing definition");
++        Reject(()=>DunaPropulsionCapture.Read(new Vessel(new List<Part>{new Part(1,new List<ModuleEngines>{null})})),"unavailable engine");
++        Reject(()=>Scope(new Vessel(Parts(ignite:true))),"ignited excluded payload");Reject(()=>Scope(new Vessel(Parts(restart:false))),"actual non-restartable primary");Reject(()=>Scope(new Vessel(Parts(shutdown:false))),"actual cannot shut down");Reject(()=>Scope(new Vessel(Parts(locked:true))),"actual throttle lock");Reject(()=>Scope(new Vessel(Parts(limiter:0))),"actual zero limiter");
++        Check(Scope(new Vessel(Parts(mode:true))).ThrustN==45000,"excluded shut-down multimode part does not poison explicit carrier scope");
++        parts=Parts();parts[3]=new Part(4,r:new List<PartResource>{new PartResource("LiquidFuel",200,.005,true)});Reject(()=>Scope(new Vessel(parts)),"actual unlocked unselected payload");
++        parts=Parts();parts[0]=new Part(1,new List<ModuleEngines>{new ModuleEngines(new[]{"LiquidFuel"})},mode:true);Reject(()=>Scope(new Vessel(parts)),"selected actual multimode ambiguity");
++        var fresh=Scope(new Vessel(Parts()));parts=Parts();parts[2]=new Part(3,r:new List<PartResource>{new PartResource("LiquidFuel",999,.005)});Check(Scope(new Vessel(parts)).Signature!=fresh.Signature,"actual inventory change invalidates signature");
++        Console.WriteLine("PASS: "+count+" production KSP capture/boundary assertions; selected scope, actual metadata, readonly source state and refusal paths. Not live KSP evidence.");
++    }
++}
+diff --git a/tests/run_duna_propulsion_tests.py b/tests/run_duna_propulsion_tests.py
+new file mode 100644
+--- /dev/null
++++ b/tests/run_duna_propulsion_tests.py
+@@ -0,0 +1,10 @@
++"""Compile pure scope tests or actual production capture with recording KSP boundaries."""
++import argparse,json,pathlib,subprocess,tempfile
++p=argparse.ArgumentParser();p.add_argument('--runtime',type=pathlib.Path,required=True);p.add_argument('--csc',type=pathlib.Path,required=True);p.add_argument('--capture',action='store_true');a=p.parse_args();root=pathlib.Path(__file__).resolve().parents[1]
++with tempfile.TemporaryDirectory(prefix='duna-propulsion-') as folder:
++ d=pathlib.Path(folder);sources=['Source/DunaMission/DunaPropulsionScope.cs']
++ sources+=['Source/DunaMission/DunaPropulsionCapture.cs','tests/DunaPropulsionCaptureTests.cs'] if a.capture else ['tests/DunaPropulsionScopeTests.cs']
++ refs=['System.Private.CoreLib.dll','System.Runtime.dll','System.Console.dll','System.Collections.dll','System.ObjectModel.dll']
++ args=['-nologo','-nostdlib+','-langversion:7.3','-target:exe',f'-out:"{d}/Tests.dll"']+[f'-reference:"{a.runtime.resolve()/r}"' for r in refs]+[f'"{root/s}"' for s in sources]
++ (d/'args.rsp').write_text('\n'.join(args));subprocess.run(['dotnet',str(a.csc),'@'+str(d/'args.rsp')],check=True)
++ (d/'Tests.runtimeconfig.json').write_text(json.dumps({'runtimeOptions':{'tfm':'net'+a.runtime.name.split('.')[0]+'.0','framework':{'name':'Microsoft.NETCore.App','version':a.runtime.name}}}));subprocess.run(['dotnet',str(d/'Tests.dll')],check=True)
+diff --git a/docs/DUNA-PROPULSION-SCOPE.md b/docs/DUNA-PROPULSION-SCOPE.md
+new file mode 100644
+--- /dev/null
++++ b/docs/DUNA-PROPULSION-SCOPE.md
+@@ -0,0 +1,87 @@
++# Explicit carrier propulsion scope — source candidate
++
++Against consolidated PR12 `2212bd81f205e4af3d7f4ff0a1920a6450a46c4f`.
++This preserves Basil's newer main console and bounded Duna panel. It replaces
++only DunaMissionPlanner.cs and adds two Duna source files, tests and this guide.
++No plugin is installed, hardware is changed, or mission is executed.
++
++The previous estimator rejected every attached mixed-propellant engine, so a
++carrier with a shut-down stowed lander could not be previewed. The new preview
++requires explicit selection of the PRIMARY engine parts and fuel tanks. Nothing
++is auto-selected from part names, construction IDs, stage numbers or role labels.
++Actual runtime flightIDs are bound to the current Game/save/vessel/part set.
++
++## Future disposable QA procedure
++
++Do not run during either human's active-play hold. After those holds are released,
++use a freshly prepared separate profile and record exact source/DLL/game/mod
++identities. Native UI, capture and flow qualification remain required.
++
++1. Load the new full-fleet commissioning fixture through normal KSP startup and
++   scenario initialization. Observe the actual clone prefabs, ship mass,
++   requested payload flow locks, all engines off and no active campaign.
++2. Open DUNA EXPEDITION (Control–Option–D on macOS). Choose primary propulsion.
++   Inspect the live part identities; select the four carrier LV-N parts.
++3. Select the three main LF tanks AND the two fuel-bearing Mk3 adapters. Inspect
++   actual amounts/locks rather than using this list as proof. Leave lander tanks
++   excluded and locked. Recovery MonoPropellant and other payload resources are
++   not transfer fuel. Selection changes no KSP object, engine, stage or lock.
++4. Search. Check the nominal wet/retained mass, 15% selected-fuel reserve,
++   primary thrust/Isp and actual selected tank totals against independent stock
++   observations. The hardware candidate's nominal reference is 32,250 primary
++   LF units / 240 kN / 800 s, with lander LF held inside retained mass.
++5. Exercise refusal: unselected matching fuel unlocked, selected tank locked,
++   wrong fuel tank, missing engine/tank, selected multimode/mixed engine,
++   selected nonrestartable/fixed-throttle engine, any attached engine ignited.
++   Do not accept a false result alone without establishing the intended context.
++6. Confirm changing any selected resource amount, engine settings, vessel mass,
++   locks, part membership, Game/save/vessel or body invalidates the itinerary.
++   Pause/warp invalidates completed results too. Starting a campaign makes this
++   pre-start itinerary unavailable. Test game reload with new flightIDs; no old
++   selection is persisted or automatically rebound.
++7. Check every selection row, scrolling, search/cancel/close and GUI input lock.
++   Requests that change the scroll tree are deferred to Update, rather than
++   rebuilding it halfway through a mouse event. This is an implementation choice,
++   not observed proof that the menu works at a particular display/UI scale.
++
++## Read-only capture/model contract
++
++Snapshots copy immutable part, engine and resource observations. Capture reads
++actual KSP mass, engine propellant metadata, vacuum curve, max thrust, limiter,
++ignition/restart/shutdown/throttle flags, and resource density/amount/flowState.
++No stock setters, activation/events, transfer or resource calls occur.
++
++Selected engines must be single-mode, single-propellant, restartable,
++shutdown-capable and throttleable, with equal vacuum Isp. All attached engines,
++including excluded payload engines, must be shut down when planning. Excluded
++shut-down mixed engines no longer poison the carrier's explicit scope. Every
++unselected tank containing a positive amount of matching fuel must be locked;
++empty unlocked tanks do not add imaginary fuel. Density/amount, ratio, mass,
++identity and ambiguous-module errors refuse rather than guess.
++
++Only selected, unlocked primary fuel is spendable by the nominal model. 15%
++remains reserved; every other resource and payload remains in retained mass.
++A canonical signature covers part membership, engine observations, selected
++identities, matching fuel inventory/locks and total wet mass. The adapter
++rechecks around twice per real second and cancels stale searches/results.
++Zero-mass EC amount changes alone do not invalidate a fuel snapshot.
++
++## Evidence and limits
++
++- 71 pure-model assertions pass, including the nominal 127-part fleet budget,
++  locked payload exclusion, explicit selection, unsupported/ignited engine and
++  inventory refusals, snapshot immutability, ordering and freshness signatures.
++- 29 assertions compile the actual production capture against recording,
++  read-only KSP boundary doubles. They cover real fields used, units/limiter,
++  unchanged source state, locks, missing metadata and unsupported contexts.
++- Full 42-source KSP1.12.5 build passes. Existing 608 Duna route-model assertions
++  pass unchanged. No native KSP run follows from these results.
++
++This is still an impulsive/nominal input estimator. It does NOT prove stock
++crossfeed connectivity, stage/thermal/ignition dynamics, actual tank draw,
++finite burns or trajectories. No maneuver nodes, throttle, resource locks,
++crew, saves, universe time or warp are written. Selecting an engine is not
++Hamish/Basil burn approval. Landed/ascent/recovery vehicles need their own
++qualified models; the conservative Ares ~86 m/s deficit is unchanged. Native
++GUI, planet ephemerides, docking state, payload separation, actual freeze/thaw,
++background power, accelerated watches and the full mission remain unqualified.
+diff --git a/Missions/Duna/mission.json b/Missions/Duna/mission.json
+--- a/Missions/Duna/mission.json
++++ b/Missions/Duna/mission.json
+@@ -27,5 +27,5 @@
+     {"id":"orbital_upkeep", "location":"Kerbin orbit", "npc_watch":5, "requirements":["actual human cryosleep", "qualified relief upkeep", "real UT/resource accounting"]},
+     {"id":"crew_recovery", "location":"Kerbin orbit/recovery", "requirements":["all crew genuinely thawed", "medical assessment", "separate recovery vehicle/burn/thermal/landing qualification", "mission log archived"]}
+   ],
+-  "remaining_release_gates":["functional UI", "actual ephemeris/vehicle capture", "SOI and finite-burn fit", "landing/ascent/recovery", "finite supplies and thermal/power", "genuine cryo handovers and NPC upkeep", "custom warp qualification", "measured mission objectives", "one undisclosed planned emergency", "authenticated two-player approvals and Luna later"]
++  "remaining_release_gates":["functional UI", "native explicit primary-propulsion/ephemeris capture and payload-lock validation", "SOI and finite-burn fit", "landing/ascent/recovery", "finite supplies and thermal/power", "genuine cryo handovers and NPC upkeep", "custom warp qualification", "measured mission objectives", "one undisclosed planned emergency", "authenticated two-player approvals and Luna later"]
+ }

@@ -1,0 +1,23 @@
+{
+  "base_ref": "2212bd81f205e4af3d7f4ff0a1920a6450a46c4f",
+  "patch_sha256": "5a79979731ae6ba5b564578831f6ab0745d98bb0edeffc1f3d30e7e11f31a653",
+  "source_count": 42,
+  "unchanged_base_source_count": 39,
+  "main_console_preserved": true,
+  "installed": false,
+  "native_runtime_verified": false,
+  "mission_playable": false,
+  "model_assertions": 71,
+  "production_capture_boundary_assertions": 29,
+  "unchanged_route_model_assertions": 608,
+  "files": {
+    "Source/DunaMission/DunaMissionPlanner.cs": "4fdcd29a5456f6edf5c5118f7d5c5c777b0a07d8d0d24cabad8f99648b9dcec2",
+    "Source/DunaMission/DunaPropulsionScope.cs": "633e42d3c464647cf778d84746704906440f7a2709c630f8053e5f8bf96d5b9e",
+    "Source/DunaMission/DunaPropulsionCapture.cs": "de79cfb133be03438bf6c594d6b3433cefb6af7f0d5be0865bd38660cc7987fb",
+    "tests/DunaPropulsionScopeTests.cs": "e448d25090c402f8972f4fe66264bf9e7e34f732ca40fc05d4fa470bac503cdd",
+    "tests/DunaPropulsionCaptureTests.cs": "52e026842f9d9b05a934ec34193c6cad18907079385551b3ca54d201c59330fd",
+    "tests/run_duna_propulsion_tests.py": "ead0cea24e68dab13147ea05538c26bafeed9de38bf390bec1bc8210e789e2ac",
+    "docs/DUNA-PROPULSION-SCOPE.md": "34c4aafdfab2595b18a803e6c31b1d4db8b1106080338bbc2e93f20b9d5e70de",
+    "Missions/Duna/mission.json": "8bfa8906b52f67744febb31d100fc0402522015b7114a02b8361e9111fb77a82"
+  }
+}
