@@ -2,28 +2,73 @@
 
 Custom cooperative crew gameplay for **Kerbal Space Program 1.12.5 build 03190**. Start with single player; multiplayer is not enabled in this package. Inspired by the ship and engineering work in *The Martian*. Cooperative tasks only: no murders, traitors or sabotage.
 
-## Download the custom mission
+## Current integration candidate
 
-The complete source, compiled plugin, generated save/craft and tools are in **Hermes-Practice-v0.3.0.zip** in this repository. Extract it into the repository folder before using the paths below. Third-party dependencies download separately from their official releases.
+All active development is consolidated on **`basil/megacrew`**: published
+cumulative core **0.3.7**, onboard engineering/operations, docking instruments,
+navigation, a read-only Duna route planner, Finch craft, optional Mac visuals,
+QA tools and the delivery plan.
+The complete shared-ship/LMP campaign is still in development.
+Core source is already expanded on this branch; the historical patch files
+are inputs for clean reconstruction, not patches to stack onto this checkout.
+
+Build a complete staging candidate into a **new** directory using your own
+KSP 1.12.5 Managed assemblies and .NET SDK:
 
 ```sh
-python3 -m zipfile -e Hermes-Practice-v0.3.0.zip .
-python3 tools/install.py --ksp-root "/path/to/your/separate/clean/KSP" --download-dependencies
+python3 tools/build_navigation_candidate.py --repo . --upstream-ref f76e437 --integration-ref HEAD --output /tmp/new-megacrew-candidate --managed "/path/to/KSP.app/Contents/Resources/Data/Managed" --csc "/path/to/dotnet/sdk/VERSION/Roslyn/bincore/csc.dll"
 ```
 
-The installer requires Python 3.9+ and refuses to overwrite an existing practice save or install into an already modded copy. Keep KSP closed during installation. For manual installation, follow the steps below.
+The staging builder reconstructs the pristine 0.3.0 package and applies the
+single cumulative 0.3.7 source packet, then replaces the package source/data
+with the committed integration snapshot. This preserves newer core UI changes
+and includes Duna mission data. Commit edits first; uncommitted files are not
+build inputs. Tracked and historical DLLs are excluded and the plugin is rebuilt
+fresh. It supplies the save/craft and installation tools in that separate directory.
+See [build modes and manifest details](docs/BUILD-NAVIGATION-CANDIDATE.md).
+The historical ZIPs remain build inputs: **do not extract them over this
+integration checkout**, which would overwrite current source and DLLs.
+
+**Active-play hold:** source builds may continue, but do not launch, terminate
+or update KSP while Basil and Hamish play. Runtime testing requires Basil to
+explicitly release this hold.
+
+For a later isolated playtest, keep KSP closed and run the staged installer against
+a separate clean KSP copy:
+
+```sh
+python3 /tmp/new-megacrew-candidate/tools/install.py --ksp-root "/path/to/your/separate/clean/KSP" --download-dependencies
+```
+
+The installer requires Python 3.9+ and refuses an existing practice save or an
+already modded target. Third-party dependencies download from their official
+releases. Finch craft and optional visuals have separate guides below.
+
+**Evidence:** actual 17-part/four-crew Hermes flight and the direct outside-pod
+cryo refusal were observed on the stable 36-source candidate. See the
+[runtime evidence](docs/CRYO-REFUSAL-RUNTIME-EVIDENCE.md). The integrated
+40-source integration build adds docking instruments, a bounded-console
+candidate and the [Duna planning preview](docs/DUNA-EXPEDITION.md); full flight, UI, freeze/thaw,
+lander, high-rate coast, animation and multiplayer acceptance remain open.
+See the [full plan](docs/FULL-DELIVERY-PLAN.md) and
+[Human Help Requests](https://github.com/w4mdzzn8my-dotcom/KSP-Custom-Mission/issues/11).
 
 ## Basil's Codex: start here
 
 1. Read this README and the repository's Issues. Use issues for progress, reproducible bugs and coordination. Do not post passwords, tokens, server configuration or private logs.
 2. Make a **separate clean KSP copy**. Do not modify Basil's existing installation, saves, or any Luna server Universe.
-3. Install the pinned dependencies below, including SSPX's separate IVA interiors. Add this repository's `GameData/MegaCrew` to the copy's GameData. Never create `GameData/GameData`.
-4. Copy `saves/MegaCrew Practice` into the copy's `saves`, only if that save name does not already exist. Copy `Ships/VAB/Hermes Walkthrough v2.craft` into the practice save's `Ships/VAB` if wanted in the editor.
-5. Launch that separate copy. In KSP.log verify MegaCrew **0.3.0**, FreeIVA, DeepFreeze and EasyVesselSwitch actually loaded. Folder presence is not proof.
+3. Install the pinned dependencies below, including SSPX's separate IVA interiors. Add the staging candidate's `GameData/MegaCrew` to the copy's GameData. Never create `GameData/GameData`.
+4. Copy the staging candidate’s `saves/MegaCrew Practice` into the copy's `saves`, only if that save name does not already exist. Copy `Ships/VAB/Hermes Walkthrough v2.craft` into the practice save's `Ships/VAB` if wanted in the editor.
+5. Launch that separate copy. In KSP.log verify MegaCrew **0.3.7 candidate**, FreeIVA, DeepFreeze and EasyVesselSwitch actually loaded. Folder presence is not proof.
 6. Load **MegaCrew Practice**, then fly **Hermes Maintenance Trainer** if the game opens at the space center. Press **F8 → Practice → Begin practice on this vessel**.
 7. Report results in the relevant issue. Distinguish source/build checks from actual in-game verification. Do not claim a completed test until observed in game.
 
-**Current validation:** custom DLL compiles against KSP 1.12.5. All 17 ship part identifiers match installed parts. The generated practice save is configured for a circular **150 km Kerbin orbit** with four assigned crew. **The original 0.2 trainer loaded into flight on Hami’s Mac. Version 0.3 interior interactions, pantry persistence and full mission completion still need in-game verification.** Hami is testing the host copy. The older editor craft loaded successfully; that does not prove the new save is flight-qualified.
+**Current validation:** source/model and compilation evidence is tracked separately
+from game behavior. The native-load QA run observed the intended 150 km orbit,
+17 parts, four awake crew and a connected idle DeepFreeze API. One direct
+backend request to freeze Ada outside the pod was refused with crew/pod state
+unchanged. That proves this refusal only; manual UI, full practice, traversal,
+care/pantry persistence and actual freeze/thaw remain acceptance gates.
 
 ## Required dependencies
 
@@ -61,7 +106,7 @@ Game rates: hunger fills in 6 hours, thirst and awake fatigue in 4 hours; ordina
 
 Planet graphics: **EVE Redux 1.11.7.2 + BoulderCo stock-planet clouds 1.2.2.1** are pinned in dependencies.json. Install only this cloud configuration; do not combine with another EVE cloud pack. They preserve stock planet sizes/orbits. Both are installed in Hami's copy; visual rendering and performance on the Mac remain pending a restart/test. Third-party visuals are downloaded separately, not redistributed in the custom archive.
 
-Lander storage/hangar work has been requested from Basil's Codex through PR #2 / issue #1. No deployed or recoverable lander is claimed in this version.
+Finch lander and external cradle candidates are included; see [the craft guide](docs/FINCH-LANDER.md). Their deploy, flight and recovery loop remains unqualified.
 
 ## Practice mission
 
@@ -91,7 +136,7 @@ The centrifuge currently behaves poorly on Hami's copy. Keep it stopped for prac
 
 `Source/MegaCrew.cs` is the main console and DeepFreeze bridge. `Source/Practice.cs` implements maintenance objectives. `Source/Interior.cs` handles cabin stations; `Source/CrewNeeds.cs` handles needs, resources and pantry provisioning. `GameData/MegaCrew/Plugins/MegaCrew.dll` is the compiled plugin. Save state lives in the selected save's `MegaCrewMission.cfg`; the stock game state remains in `persistent.sfs`.
 
-Keep changes scoped to the separate test copy and use focused GitHub issues/PRs. Avoid simultaneous edits to the same files. Hami's Codex owns the initial practice implementation and host test. Basil's Codex should first verify installation on Basil's Mac and report startup/load evidence, then take an agreed issue.
+Develop on the consolidated integration branch and coordinate focused changes in issue #1. Preserve upstream-owned core source provenance and avoid simultaneous edits to the same subsystem. Use Human Help Requests for concrete human checks. Runtime work stays in disposable copies with exact inputs and evidence.
 
 Future multiplayer requires separate integration and testing: Luna 0.29.2 alone will not synchronize these custom objectives or health records. Do not claim co-op success until both clients share the same session and observe a shared vessel/Kerbal. Never overwrite or migrate the existing server Universe without a separate explicit request.
 
@@ -101,8 +146,30 @@ Known pending checks: generated save load, physical stability, hatch traversal, 
 
 With a .NET SDK installed, run `python3 tools/build.py --managed "/path/to/KSP.app/Contents/Resources/Data/Managed" --csc "/path/to/dotnet/sdk/VERSION/Roslyn/bincore/csc.dll"`. On Windows/Linux select the equivalent KSP Data/Managed folder. This uses your own KSP reference assemblies and does not redistribute them. Restart KSP after replacing the DLL.
 
-Tests: `python3 -m unittest discover -s tests -v` runs Basil’s six setup checks. `python3 tests/run_needs_tests.py --runtime "/path/to/dotnet/shared/Microsoft.NETCore.App/VERSION" --csc "/path/to/sdk/Roslyn/bincore/csc.dll"` tests the production need model without Unity. Neither establishes successful in-game interaction.
+Tests: `python3 -m unittest discover -s tests -v` runs the Python setup, fixture, QA and builder checks. `python3 tests/run_needs_tests.py --runtime "/path/to/dotnet/shared/Microsoft.NETCore.App/VERSION" --csc "/path/to/sdk/Roslyn/bincore/csc.dll"` tests the production need model without Unity. Neither establishes successful in-game interaction.
 
 ## Next phase: Luna and authored stories
 
 After the single-player systems, landers and maintenance mission pass testing, integrate Luna with authoritative shared state, then add authored cooperative stories. See [the ordered roadmap](docs/ROADMAP.md). These are future targets; the current package remains single-player with no time warp.
+
+## Finch lander development candidates
+
+A [two-crew vacuum lander and external Hermes docking cradle](docs/FINCH-LANDER.md)
+are available as separate craft files in the source checkout. Their intended
+mission is a Mun/Minmus low-orbit sortie; flight qualification remains pending.
+They do not replace the existing practice save or add a launch vehicle.
+
+## Onboard operations development candidate
+
+The source checkout also includes [pilot, science, supplies, cryo checks and an
+operations journal](docs/ONBOARD-OPERATIONS.md). Use **Ctrl+Alt+O** or OPERATIONS;
+engineering uses **Ctrl+Alt+E**. The combined build incorporates the published
+0.3.7 core and its shared duty readiness. The historical release ZIP remains
+0.3.0; use the integration staging command for current addons.
+
+## Optional Mac visual profile
+
+See [docs/VISUAL-PROFILE.md](docs/VISUAL-PROFILE.md) for the pinned clouds v3,
+NativeParallax Mac renderer, Firefly and VaporCones profile requested in issue #3.
+Install the base mission first. Visual rendering and the F8 binding conflict need
+separate verification; this profile does not enable multiplayer.

@@ -1,0 +1,140 @@
+{
+  "additive_packets": {
+    "duna_planner_v01": {
+      "flight_qualified": false,
+      "patch_sha256": "22e47e301e22baf0336b8a3dd13ae2b1e3319978f01753777b4eb47d7449f72f",
+      "review": "608 model assertions; only six additive paths transplanted; adapter UI refinements documented in DUNA-EXPEDITION.md",
+      "upstream_commit": "a946a74345afec74c75b003a5e0c91f09bab5de5"
+    }
+  },
+  "candidate_dll": {
+    "assembly_name": "MegaCrew",
+    "flight_qualified": false,
+    "path": "GameData/MegaCrew/Plugins/MegaCrew.dll",
+    "qa_addons_included": false,
+    "sha256": "88a33077bd9e95b16decb1fc6d1d1d37cb0b77a49d60cf13fb6428cc1077b7e4",
+    "ui_runtime_retest_passed": false
+  },
+  "canonical_core_deviations": {
+    "Source/MegaCrew.cs": {
+      "candidate_sha256": "0a6f66df2943ad199f73fbe832fce2a1a627c74b7643025434c62c3e844013bd",
+      "canonical_sha256": "7c87788b3d279664e55ceec45009dab7c1d54bc0707110b9bf5921123370db91",
+      "reason": "Bounded console layout, GUI state restoration, and explicit EVA Crew-tab command gates; runtime retest pending."
+    }
+  },
+  "canonical_core_packet_commit": "f76e4371d41ff6c246f3cea5b88d2a516f36bc38",
+  "canonical_core_source_sha256": {
+    "Source/Campaign.cs": "37d4338d461aa48c9b52e530665533db5a09b56e85da57ec5ddd9ce55cfebe51",
+    "Source/CampaignCoast.cs": "e882337c2177cd8ff7fd8f54c6bd6c42dc2f1036421316ad33ecded68dc2cdd8",
+    "Source/CampaignEpochPlanner.cs": "dc1972b43990bcdd27c71bab770aa9767d120ea9fd4c2cde69bd08a1613e2c5a",
+    "Source/CampaignSupplies.cs": "4ff3bc3c2c0ccb9f9ec58516e80c33b8469cb717bb8edeab10d84c9b04e3c7f8",
+    "Source/CampaignTiming.cs": "bd2753f0ecb53e0bf6249214e49640e0c9af0156762dd0fefc393862171480ac",
+    "Source/ConsoleInput.cs": "37ac9a250aa28985399fc3c04643b6dce4a4e08d01f594a89ba812e66028a94c",
+    "Source/CrewCare.cs": "dc48bd216253d353f3347af3145ea65125eeaf638da8b57820e75e351ec06edd",
+    "Source/CrewDuty.cs": "248a48887b12c292f502e8e2869c6a15630a60b235703971f4ed4bd3529b321c",
+    "Source/CrewNeeds.cs": "1a8eac96ec4f537962c932cc5401e7e810b3d0f6280bd56a6a77b57a83b6aa66",
+    "Source/CrewRecovery.cs": "9eaf4a5b55f8945b845a3fc79a0803ca41a7dda2af3a146f7a9e6d79f5e155d9",
+    "Source/CrewStateCodec.cs": "d3b6f57921799581b234342d4fa6979cedcf6da48c4f7c6fc78c805b61644778",
+    "Source/CryoPowerAudit.cs": "19127f142d8c59664539abd8396115385ce735f6f6fd2bea0d71d0aba7b79b82",
+    "Source/CryoPowerModel.cs": "fb2399eae34491ca5f75f5642ec9253ee4246e8651007615f0e68e493d8465ba",
+    "Source/DailyRoutine.cs": "d86be03c8bf6d5def72448eac9c5d12b7dbbf41e3f352ad2964c2278ccf9e030",
+    "Source/Interior.cs": "cecc9b2c9c8e1eb828e769ef207f2250dca83b22cd5001fcd617208945045496",
+    "Source/MegaCrew.cs": "7c87788b3d279664e55ceec45009dab7c1d54bc0707110b9bf5921123370db91",
+    "Source/Practice.cs": "b652c64921d57c1b557331af67c6aea6567fbc58d1f09bc61f3b4fa3ab026445"
+  },
+  "craft_sha256": {
+    "Ships/VAB/Hermes Finch Docking Cradle.craft": "2eddd59356cc092a060ae3ff2fa6b2ba07ed16928486454716174e36b1a38cc6",
+    "Ships/VAB/Hermes Finch Vacuum Lander.craft": "b5da5c8ef75b9c2459b1c04f4ea38311ac7078867331469035e13be6ca93b185"
+  },
+  "created_utc": "2026-10-31T04:56:40.469179+00:00",
+  "development_branch": "basil/megacrew",
+  "preserved_topic_heads": {
+    "basil/delivery-plan": "df5acba5a84734818652bfc75146eee6231be846",
+    "basil/lander-storage": "3b0ffe69c3574f5c49e721c29f59accc89bdb600",
+    "basil/mac-preflight": "56fdfdf9b234ddcdf8ea339395f4a77c8fe99cf2",
+    "basil/navigation-core": "4e36f5158e425e7b244eff607409d930a1ad5752",
+    "basil/onboard-engineering": "c58e5d12508dc55de2324980cdec5eb0e8f411ad",
+    "basil/visual-profile": "ca393928526664a09b39b3936eb8b6f0141c108b"
+  },
+  "schema": 1,
+  "source_commit": "6df8af479d7acd4be6118b5adf1dc3d6454d809c",
+  "source_count": 40,
+  "source_sha256": {
+    "Source/Campaign.cs": "37d4338d461aa48c9b52e530665533db5a09b56e85da57ec5ddd9ce55cfebe51",
+    "Source/CampaignCoast.cs": "e882337c2177cd8ff7fd8f54c6bd6c42dc2f1036421316ad33ecded68dc2cdd8",
+    "Source/CampaignEpochPlanner.cs": "dc1972b43990bcdd27c71bab770aa9767d120ea9fd4c2cde69bd08a1613e2c5a",
+    "Source/CampaignSupplies.cs": "4ff3bc3c2c0ccb9f9ec58516e80c33b8469cb717bb8edeab10d84c9b04e3c7f8",
+    "Source/CampaignTiming.cs": "bd2753f0ecb53e0bf6249214e49640e0c9af0156762dd0fefc393862171480ac",
+    "Source/ConsoleInput.cs": "37ac9a250aa28985399fc3c04643b6dce4a4e08d01f594a89ba812e66028a94c",
+    "Source/CrewCare.cs": "dc48bd216253d353f3347af3145ea65125eeaf638da8b57820e75e351ec06edd",
+    "Source/CrewDuty.cs": "248a48887b12c292f502e8e2869c6a15630a60b235703971f4ed4bd3529b321c",
+    "Source/CrewNeeds.cs": "1a8eac96ec4f537962c932cc5401e7e810b3d0f6280bd56a6a77b57a83b6aa66",
+    "Source/CrewRecovery.cs": "9eaf4a5b55f8945b845a3fc79a0803ca41a7dda2af3a146f7a9e6d79f5e155d9",
+    "Source/CrewStateCodec.cs": "d3b6f57921799581b234342d4fa6979cedcf6da48c4f7c6fc78c805b61644778",
+    "Source/CryoPowerAudit.cs": "19127f142d8c59664539abd8396115385ce735f6f6fd2bea0d71d0aba7b79b82",
+    "Source/CryoPowerModel.cs": "fb2399eae34491ca5f75f5642ec9253ee4246e8651007615f0e68e493d8465ba",
+    "Source/DailyRoutine.cs": "d86be03c8bf6d5def72448eac9c5d12b7dbbf41e3f352ad2964c2278ccf9e030",
+    "Source/DockingGeometryModel.cs": "bf968ac532fb8e494a4f5b76123a4d4385f8eeac1f52972ea775b041dae4a511",
+    "Source/DunaMission/DunaMissionPlanner.cs": "5e17a4e973d6f482894a3799e298bc196df7ebf119b8b77148163d67698fe34e",
+    "Source/DunaMission/DunaRoutePlanner.cs": "7098dc2e693f616bc1cad6aa9c84c999686d7f752ed1d67afb92fb591dee9170",
+    "Source/DutyReadinessBridge.cs": "da2cdbc9760759cd4bd40cd41ddb4b6221b3cda1f3e896bb120e849ba6d2dc44",
+    "Source/Interior.cs": "cecc9b2c9c8e1eb828e769ef207f2250dca83b22cd5001fcd617208945045496",
+    "Source/MegaCrew.cs": "0a6f66df2943ad199f73fbe832fce2a1a627c74b7643025434c62c3e844013bd",
+    "Source/Navigation/BurnApprovals.cs": "5dd7cdef215b3671d9822a9caadbe5b53d0465450c0081fd6d58b7624140b7ce",
+    "Source/Navigation/BurnDurationEstimator.cs": "de30d1b7e898538dcb08b8446a8451ccf5a1a7a9a9b0d113a65df5384932ef53",
+    "Source/Navigation/CircularLowerPeriapsisPreview.cs": "2ac5da3d0c4cd4406cf823090423653e313bacbf1ff4155ea9bbc07574a4c8c3",
+    "Source/Navigation/Lambert.cs": "8efcbd6402d1a315735805e1bc6737f384d75ea522fdd13e63908c8e724bdcfc",
+    "Source/Navigation/MissionControlMath.cs": "bb6825e45a94025084955d17dd2b2698c6aac34acb2480f450167fc0ac2ef90b",
+    "Source/Navigation/NavigationPreviewPanel.cs": "e12873c0976eb3aa47dd8636be1a1b5260b39f9fe6d0073d6f16abb4c1075823",
+    "Source/Navigation/NodeFrame.cs": "b6db03fda381f96d6039302b4cf4411e32a7af8546b76b63e94d08db700b5796",
+    "Source/Navigation/PlanFingerprint.cs": "7ae0c0e3546f10962a7e023524d0ef3fc50a57fbe204935b176b6ae5ba36f4f9",
+    "Source/Navigation/WatchCoverage.cs": "2139efd02d243e565e2cd580057ff5ce5f3f444813a79745721fb773f43c17fe",
+    "Source/OnboardDockingInstruments.cs": "31b61cbf4f7cb1aa4372a521d1362f423a5e9f3244c2ef54c8ad583acd9a57cf",
+    "Source/OnboardEngineering.cs": "19911189ab26faa995501832f957eb92c39359e8ecb6d87671af94f5390fcf37",
+    "Source/OnboardOperations.cs": "58e0243f4da98bfba1cd59f35802b8441d5e663d5ab9a5eaa2ef6595ffbdfb01",
+    "Source/OnboardPowerSurvey.cs": "bc4413921914715944aa125797c8ebcf9c74c224aa114e35fda69806d54a1ab4",
+    "Source/OnboardRendezvous.cs": "d66d2e6229b840dae30477210464402686037eb37fd2f05d52bb8548fdde330e",
+    "Source/OnboardScienceObservation.cs": "7b489828b7789508da73d29167fc9dd75040158d8ae9b3e037c36314df1f263c",
+    "Source/OperationsModel.cs": "f961e1fd26845c57f3dd2e95bb52b9eebc03689260fcc871aa6af295e7a40e0b",
+    "Source/PowerSurveyModel.cs": "22d1733fc46ec84fbb4e954f5fe2cf3241f3aee3f622d68b88717eaa7a39298c",
+    "Source/Practice.cs": "b652c64921d57c1b557331af67c6aea6567fbc58d1f09bc61f3b4fa3ab026445",
+    "Source/RendezvousModel.cs": "f95d73ba45cc159165ec732991d1b76b4e2e037ca2118849786f67afd3ad2684",
+    "Source/ScienceObservationModel.cs": "970716096836229064e7c438463389fad3d811f5bb1db12b4bb9edbd2f95fdfe"
+  },
+  "updated_utc": "2026-10-31T06:21:16.918323+00:00",
+  "upstream_base_commit": "3eddae54f97cd93502e2785fea5496debc501a87",
+  "validation": {
+    "console_input_boundary_rerun": "passed; FreeIVA lock preserved",
+    "cryo_refusal_recording_assertions": 113,
+    "duna_model_assertions": 608,
+    "full_cryo_probe": "native-load source compiles; runtime execution pending",
+    "full_snapshot_build": {
+      "builder_sha256": "b064270b8496c9c079eb3400e5ee0ddf809ff043db07d7374d3cc27d2390ec7b",
+      "candidate_dll_sha256": "b4028ae1e6c454c267e339e0f5606d1e6e065dc4948eb8deed7d96bc83192435",
+      "compiled": true,
+      "mode": "full_git_snapshot",
+      "normal_dll_only": true,
+      "prepare_only_dll_count": 0,
+      "source_bytes_match_git": true,
+      "source_commit": "6df8af479d7acd4be6118b5adf1dc3d6454d809c",
+      "source_count": 40,
+      "tree_sha256": "2f15b895cbe5fe99bce96c657ff27b0a790eb9351162a62f47b22931f536c6ac"
+    },
+    "iva_catalog_recording_assertions": 31,
+    "navigation_failures": 0,
+    "navigation_randomized_cases": 2000,
+    "python_skipped": 0,
+    "python_test_source_commit": "6df8af479d7acd4be6118b5adf1dc3d6454d809c",
+    "python_tests": 82,
+    "real_backend_refusal": {
+      "full_freeze_thaw_qualified": false,
+      "plugin_sha256": "2d6fd46d353b1cac3b971deff623a2f7f24d2d52cb44cc605e01e8548c5ca986",
+      "report_sha256": "7e1b398be671ca837971d18bad918e2a17aa70a611b0e52d1d2dd0c8dca75c92",
+      "result": "REFUSED_AS_EXPECTED",
+      "source_commit": "d40ba639a70a5e2e40b1d0cfb2ef60660ff4db8e",
+      "transfer_busy_qualified": false,
+      "ui_qualified": false
+    },
+    "root_csharp_runners": 14
+  }
+}

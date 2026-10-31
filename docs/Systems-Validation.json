@@ -1,0 +1,28 @@
+{
+  "custom_version": "0.3.0",
+  "compiled_against": "KSP 1.12.5 build 03190",
+  "pure_need_model_tests": "passed: rates, frame partitioning, clamps, rest, frozen needs, duty thresholds",
+  "preflight_tests": "6 passed",
+  "in_game_0_3_verified": false,
+  "graphics_installed": [
+    "EVE Redux 1.11.7.2",
+    "BoulderCo clouds 1.2.2.1"
+  ],
+  "graphics_render_verified": false,
+  "limitations": [
+    "Room panels rather than individually animated clickable props",
+    "No stock flight-control lockout or deaths for unmet needs",
+    "No oxygen/carbon-dioxide or life-support recycling simulation",
+    "Multiplayer state not synchronized",
+    "Lander/storage work requested from Basil via PR review"
+  ],
+  "runtime_startup_verified": true,
+  "runtime_evidence": [
+    "KSP log: MegaCrew 0.3.0 loaded at 18:17:24",
+    "Flight switched to Hermes Maintenance Trainer at 18:19:02",
+    "Mission state recorded visits to command and habitation modules",
+    "Saved crew needs advanced despite watch running=False",
+    "EVE CloudsManager initialized Kerbin-clouds1 at 18:19:03"
+  ],
+  "pantry_followup": "Resource registration warning found in first 0.3 load; Food/Water definitions added to prefab config for next launch. Consumption and no-refill persistence still need testing."
+}

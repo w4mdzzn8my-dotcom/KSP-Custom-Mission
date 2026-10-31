@@ -1,0 +1,31 @@
+{
+  "id": "hermes-duna-expedition",
+  "schema": 1,
+  "status": "planning_candidate_not_playable",
+  "requires_new_save": true,
+  "mission_month_seconds": 2592000,
+  "mission_months": 24,
+  "watch_months": 4,
+  "human_month_play_seconds": 4800,
+  "npc_watch_play_seconds": 60,
+  "human_crew": ["Hamish Kerman", "Basil Kerman"],
+  "relief_crew": ["Ada Kerman", "Vikram Kerman"],
+  "planned_emergency_count": 1,
+  "emergency_timing_configured": false,
+  "initial_location": "Kerbin parking orbit",
+  "destination": "Duna",
+  "mission_clock_pauses_for_burns": false,
+  "burn_requires_distinct_human_checks": true,
+  "cryosleep_requires_actual_deepfreeze": true,
+  "high_rate_coast_enabled": false,
+  "phases": [
+    {"id":"commission", "location":"Kerbin orbit", "human_watch":0, "requirements":["four crew and four qualified cryopod places", "finite food/water and realistic crew care", "qualified power/cooling reserves", "propulsion and trajectory verified", "lander storage/clearance and return capability"]},
+    {"id":"outbound", "location":"Kerbin-to-Duna transfer", "human_watch":0, "requirements":["stock-fitted ejection", "separate Hamish/Basil plan checks", "measured propellant/orbital progression", "maintenance and course-correction schedule"]},
+    {"id":"duna_capture", "location":"Duna orbit", "human_watch":0, "requirements":["qualified finite capture burn", "orbit and eclipse safety", "station power and thermal checks"]},
+    {"id":"surface_science", "location":"Duna orbit/surface", "human_watch":2, "requirements":["dedicated atmospheric/descent/ascent lander", "landing-site and ascent trajectory", "human-watch coverage for all burns", "actual experiments, docking, supplies and medical/maintenance work"]},
+    {"id":"return", "location":"Duna-to-Kerbin transfer", "human_watch":4, "requirements":["stock-fitted departure/capture", "fresh independent human plan checks", "actual engine/propellant progression", "reserve and maintenance checks"]},
+    {"id":"orbital_upkeep", "location":"Kerbin orbit", "npc_watch":5, "requirements":["actual human cryosleep", "qualified relief upkeep", "real UT/resource accounting"]},
+    {"id":"crew_recovery", "location":"Kerbin orbit/recovery", "requirements":["all crew genuinely thawed", "medical assessment", "separate recovery vehicle/burn/thermal/landing qualification", "mission log archived"]}
+  ],
+  "remaining_release_gates":["functional UI", "actual ephemeris/vehicle capture", "SOI and finite-burn fit", "landing/ascent/recovery", "finite supplies and thermal/power", "genuine cryo handovers and NPC upkeep", "custom warp qualification", "measured mission objectives", "one undisclosed planned emergency", "authenticated two-player approvals and Luna later"]
+}

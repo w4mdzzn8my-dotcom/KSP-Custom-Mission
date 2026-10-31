@@ -1,0 +1,33 @@
+{
+  "evidence_type": "historical_main_menu_loader_observations",
+  "runtime_verified": false,
+  "scope": {
+    "applies_to": "prior pre-parent-first-order Finch craft candidate only",
+    "current_candidate_qualified": false,
+    "runtime_loaded_artifact_sha256": null,
+    "artifact_hash_note": "The exact craft file bytes used by the loader probe were not recorded. The hashes below identify the pre-reorder source snapshot at ref 45a3bad43dca4f5aa9ddcc8958ef81d84c9f4036 as provenance only; they do not prove that those exact bytes were loaded.",
+    "provenance_reference": {
+      "git_ref": "45a3bad43dca4f5aa9ddcc8958ef81d84c9f4036",
+      "lander_craft_sha256": "b5da5c8ef75b9c2459b1c04f4ea38311ac7078867331469035e13be6ca93b185",
+      "cradle_craft_sha256": "5c1a0205e629f3d039da01570fa10b7a89267b5122983caf20a04284f3daa686"
+    },
+    "important_limit": "The generator now emits the cradle parent-before-child ordering correction. No runtime result is claimed for that reordered candidate."
+  },
+  "observations": {
+    "loader_test": {
+      "ksp_build": "1.12.5.03190",
+      "lander_parts": 17,
+      "lander_uncrewed_loaded_mass_t": 6.96700006909668,
+      "lander_seats": 2,
+      "cradle_parts": 35,
+      "cradle_docking_modules": 2,
+      "cradle_root_observed": true,
+      "scene": "main menu ShipConstruction.LoadShip",
+      "flight_verified": false,
+      "cradle_root": "sspx-core-375-1",
+      "dock_parent_identity_verified": true,
+      "dock_state_at_main_menu": "Ready (both); flight state unverified"
+    },
+    "interpretation": "A later index-based main-menu loader probe reported that cradle part 18 (lander cabin) was parented to part 21 (lander port), which was parented to part 17 (carrier port). Both docking modules reported Ready in that main-menu context. Earlier observations of no cradle root were not reproduced after separating probe lifetimes. These observations do not establish initialized flight docking state, release behavior, clearance, stability, landing, or recovery."
+  }
+}

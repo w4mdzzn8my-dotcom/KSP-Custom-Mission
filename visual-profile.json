@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "clouds": {
+    "filename": "VolumetricClouds-v3.zip",
+    "sha256": "5834bb4a864b8d5a30df7ea7db81914b2e44c7e9ebd8dfac0313050574f1aced",
+    "source": "https://www.patreon.com/blackrack/posts/true-volumetric-87982960"
+  },
+  "local_mods": {
+    "NativeParallax": {
+      "tree_sha256": "fe5e1224644391f1285ce75c8edc8143ddca692f0dc48b2ae39e26dda0bb3927",
+      "files": 484
+    },
+    "000_Harmony": {
+      "tree_sha256": "5a77433b947cbb8da26c69d155710a8d46dd0bc731869af5b7aeab58b1ff97fb",
+      "files": 5
+    },
+    "Firefly": {
+      "tree_sha256": "145494e6d017423c5406db0a2d8f634f3451f4d4cd24c190da04239447168901",
+      "files": 61
+    },
+    "FireflyAPI": {
+      "tree_sha256": "090f0c7f1ca05af3220dda7b6890044e285bf0890de0996f8d39e8f08604e831",
+      "files": 3
+    },
+    "VaporCones": {
+      "tree_sha256": "a8c343266d452f6cd1531d454ac38b46f17111ebfdb14605d876f11ce489eec5",
+      "files": 3
+    }
+  },
+  "notes": [
+    "NativeParallax is the local experimental Mac backend, not the upstream Parallax Continued GPU renderer.",
+    "No third-party assets redistributed.",
+    "Local directory hashes exclude installation.json and .DS_Store."
+  ]
+}

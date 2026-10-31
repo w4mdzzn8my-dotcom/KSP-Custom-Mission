@@ -1,0 +1,453 @@
+ship = Hermes Finch Vacuum Lander
+version = 1.12.5
+description = Two-crew vacuum lander candidate for Mun/Minmus low-orbit sorties. No atmosphere, launch booster or Kerbin recovery. Flight qualification pending.
+type = VAB
+size = 5,6,5
+persistentId = 970000000
+rot = 0,0,0,1
+missionFlag = Squad/Flags/default
+vesselType = Lander
+PART
+{
+	part = mk2LanderCabin.v2_970000000
+	partName = Part
+	persistentId = 970001000
+	pos = 0,4,0
+	attPos = 0,0,0
+	attPos0 = 0,4,0
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 0
+	link = Rockomax8BW_970000001
+	attN = bottom,Rockomax8BW_970000001_0|0|0
+	link = dockingPort2_970000003
+	attN = top,dockingPort2_970000003_0|0|0
+	link = RCSBlock.v2_970000005
+	link = solarPanels5_970000006
+	link = RCSBlock.v2_970000008
+	link = solarPanels5_970000009
+	link = RCSBlock.v2_970000011
+	link = solarPanels5_970000012
+	link = RCSBlock.v2_970000014
+	link = solarPanels5_970000015
+	link = batteryBankMini_970000016
+	RESOURCE
+	{
+		name = ElectricCharge
+		amount = 100
+		maxAmount = 100
+	}
+	RESOURCE
+	{
+		name = MonoPropellant
+		amount = 40
+		maxAmount = 40
+	}
+	MODULE
+	{
+		name = ModulePartVariants
+		selectedVariant = Lander
+	}
+}
+PART
+{
+	part = Rockomax8BW_970000001
+	partName = Part
+	persistentId = 970001001
+	pos = 0,3.141426,0
+	attPos = 0,0,0
+	attPos0 = 0,3.141426,0
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 0
+	attN = top,mk2LanderCabin.v2_970000000_0|0|0
+	link = liquidEngine3.v2_970000002
+	attN = bottom,liquidEngine3.v2_970000002_0|0|0
+	link = landingLeg1-2_970000004
+	link = landingLeg1-2_970000007
+	link = landingLeg1-2_970000010
+	link = landingLeg1-2_970000013
+	RESOURCE
+	{
+		name = LiquidFuel
+		amount = 360
+		maxAmount = 360
+	}
+	RESOURCE
+	{
+		name = Oxidizer
+		amount = 440
+		maxAmount = 440
+	}
+}
+PART
+{
+	part = liquidEngine3.v2_970000002
+	partName = Part
+	persistentId = 970001002
+	pos = 0,2.686426,0
+	attPos = 0,0,0
+	attPos0 = 0,2.686426,0
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = 0
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 0
+	attN = top,Rockomax8BW_970000001_0|0|0
+}
+PART
+{
+	part = dockingPort2_970000003
+	partName = Part
+	persistentId = 970001003
+	pos = 0,4.751929,0
+	attPos = 0,0,0
+	attPos0 = 0,4.751929,0
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 0
+	attN = bottom,mk2LanderCabin.v2_970000000_0|0|0
+}
+PART
+{
+	part = landingLeg1-2_970000004
+	partName = Part
+	persistentId = 970001004
+	pos = 0,2.991426,1.25
+	attPos = 0,0,0
+	attPos0 = 0,2.991426,1.25
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,Rockomax8BW_970000001
+}
+PART
+{
+	part = RCSBlock.v2_970000005
+	partName = Part
+	persistentId = 970001005
+	pos = 0,4.1,1.25
+	attPos = 0,0,0
+	attPos0 = 0,4.1,1.25
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,mk2LanderCabin.v2_970000000
+}
+PART
+{
+	part = solarPanels5_970000006
+	partName = Part
+	persistentId = 970001006
+	pos = 0,4.35,1.27
+	attPos = 0,0,0
+	attPos0 = 0,4.35,1.27
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,mk2LanderCabin.v2_970000000
+}
+PART
+{
+	part = landingLeg1-2_970000007
+	partName = Part
+	persistentId = 970001007
+	pos = 1.25,2.991426,7.65404249e-17
+	attPos = 0,0,0
+	attPos0 = 1.25,2.991426,7.65404249e-17
+	rot = 0,0.707106781,0,0.707106781
+	attRot = 0,0,0,1
+	attRot0 = 0,0.707106781,0,0.707106781
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,Rockomax8BW_970000001
+}
+PART
+{
+	part = RCSBlock.v2_970000008
+	partName = Part
+	persistentId = 970001008
+	pos = 1.25,4.1,7.65404249e-17
+	attPos = 0,0,0
+	attPos0 = 1.25,4.1,7.65404249e-17
+	rot = 0,0.707106781,0,0.707106781
+	attRot = 0,0,0,1
+	attRot0 = 0,0.707106781,0,0.707106781
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,mk2LanderCabin.v2_970000000
+}
+PART
+{
+	part = solarPanels5_970000009
+	partName = Part
+	persistentId = 970001009
+	pos = 1.27,4.35,7.77650717e-17
+	attPos = 0,0,0
+	attPos0 = 1.27,4.35,7.77650717e-17
+	rot = 0,0.707106781,0,0.707106781
+	attRot = 0,0,0,1
+	attRot0 = 0,0.707106781,0,0.707106781
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,mk2LanderCabin.v2_970000000
+}
+PART
+{
+	part = landingLeg1-2_970000010
+	partName = Part
+	persistentId = 970001010
+	pos = 1.5308085e-16,2.991426,-1.25
+	attPos = 0,0,0
+	attPos0 = 1.5308085e-16,2.991426,-1.25
+	rot = 0,1,0,6.123234e-17
+	attRot = 0,0,0,1
+	attRot0 = 0,1,0,6.123234e-17
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,Rockomax8BW_970000001
+}
+PART
+{
+	part = RCSBlock.v2_970000011
+	partName = Part
+	persistentId = 970001011
+	pos = 1.5308085e-16,4.1,-1.25
+	attPos = 0,0,0
+	attPos0 = 1.5308085e-16,4.1,-1.25
+	rot = 0,1,0,6.123234e-17
+	attRot = 0,0,0,1
+	attRot0 = 0,1,0,6.123234e-17
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,mk2LanderCabin.v2_970000000
+}
+PART
+{
+	part = solarPanels5_970000012
+	partName = Part
+	persistentId = 970001012
+	pos = 1.55530143e-16,4.35,-1.27
+	attPos = 0,0,0
+	attPos0 = 1.55530143e-16,4.35,-1.27
+	rot = 0,1,0,6.123234e-17
+	attRot = 0,0,0,1
+	attRot0 = 0,1,0,6.123234e-17
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,mk2LanderCabin.v2_970000000
+}
+PART
+{
+	part = landingLeg1-2_970000013
+	partName = Part
+	persistentId = 970001013
+	pos = -1.25,2.991426,-2.29621275e-16
+	attPos = 0,0,0
+	attPos0 = -1.25,2.991426,-2.29621275e-16
+	rot = 0,0.707106781,0,-0.707106781
+	attRot = 0,0,0,1
+	attRot0 = 0,0.707106781,0,-0.707106781
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,Rockomax8BW_970000001
+}
+PART
+{
+	part = RCSBlock.v2_970000014
+	partName = Part
+	persistentId = 970001014
+	pos = -1.25,4.1,-2.29621275e-16
+	attPos = 0,0,0
+	attPos0 = -1.25,4.1,-2.29621275e-16
+	rot = 0,0.707106781,0,-0.707106781
+	attRot = 0,0,0,1
+	attRot0 = 0,0.707106781,0,-0.707106781
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,mk2LanderCabin.v2_970000000
+}
+PART
+{
+	part = solarPanels5_970000015
+	partName = Part
+	persistentId = 970001015
+	pos = -1.27,4.35,-2.33295215e-16
+	attPos = 0,0,0
+	attPos0 = -1.27,4.35,-2.33295215e-16
+	rot = 0,0.707106781,0,-0.707106781
+	attRot = 0,0,0,1
+	attRot0 = 0,0.707106781,0,-0.707106781
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,mk2LanderCabin.v2_970000000
+}
+PART
+{
+	part = batteryBankMini_970000016
+	partName = Part
+	persistentId = 970001016
+	pos = 0,4,-1.38
+	attPos = 0,0,0
+	attPos0 = 0,4,-1.38
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	dstg = 0
+	sidx = 0
+	sqor = -1
+	sepI = -1
+	attm = 1
+	srfN = srfAttach,mk2LanderCabin.v2_970000000
+	RESOURCE
+	{
+		name = ElectricCharge
+		amount = 200
+		maxAmount = 200
+	}
+}
